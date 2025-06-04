@@ -529,9 +529,8 @@ pytest --cov=quantbt
 
 ## 💬 지원 및 문의
 
-- 이슈 리포팅: [GitHub Issues](https://github.com/your-repo/quantbt/issues)
-- 문의사항: your-email@example.com
-- 커뮤니티: [Discord](https://discord.gg/your-discord)
+- 이슈 리포팅: [GitHub Issues](https://github.com/lazydok/quantbt/issues)
+- 문의사항: soundlayerd@gmail.com
 
 ---
 
