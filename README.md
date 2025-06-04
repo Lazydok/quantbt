@@ -479,23 +479,7 @@ class OptimizedStrategy(TradingStrategy):
         return pl.concat([data, indicators], how="horizontal")
 ```
 
-## 🧪 테스팅
-
-```bash
-# 전체 테스트 실행
-pytest
-
-# 지표 계산 테스트
-pytest tests/test_indicator_precompute.py
-
-# 전략 테스트
-pytest tests/test_strategies.py
-
-# 커버리지 포함 테스트
-pytest --cov=quantbt
-```
-
-## 📚 문서 및 예제
+## 📚 문서 및 예제(업데이트 예정)
 
 - [전체 예제 코드](./examples/)
 - [API 문서](./docs/api.md)
