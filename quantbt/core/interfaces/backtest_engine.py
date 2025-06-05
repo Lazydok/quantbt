@@ -118,8 +118,14 @@ class BacktestEngineBase(ABC):
         
         try:
             self._is_running = True
+            
+            # 컴포넌트 유효성 검증
             self._validate_components()
-            return await self._execute_backtest(config)
+            
+            # 백테스팅 실행
+            result = await self._execute_backtest(config)
+            
+            return result
         finally:
             self._is_running = False
     

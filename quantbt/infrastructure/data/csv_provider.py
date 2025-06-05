@@ -6,11 +6,19 @@ CSV 파일에서 시장 데이터를 로드하는 데이터 제공자입니다.
 
 import os
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, AsyncIterator
 from datetime import datetime
 import polars as pl
 
 from ...core.interfaces.data_provider import DataProviderBase
+
+# 멀티타임프레임 지원을 위한 import 추가
+try:
+    from ...core.utils.timeframe import TimeframeUtils
+    from ...core.entities.market_data import MultiTimeframeDataBatch
+    MULTI_TIMEFRAME_AVAILABLE = True
+except ImportError:
+    MULTI_TIMEFRAME_AVAILABLE = False
 
 
 class CSVDataProvider(DataProviderBase):
@@ -31,6 +39,10 @@ class CSVDataProvider(DataProviderBase):
         
         if not self.data_dir.exists():
             raise ValueError(f"Data directory does not exist: {data_dir}")
+    
+    def supports_timeframe(self, timeframe: str) -> bool:
+        """타임프레임 지원 여부 확인 - CSV는 모든 타임프레임 지원"""
+        return self.validate_timeframe(timeframe)
     
     def _load_available_symbols(self) -> List[str]:
         """CSV 파일에서 사용 가능한 심볼 로드"""

@@ -7,7 +7,7 @@
 import asyncio
 import numpy as np
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import polars as pl
 
 from ...core.interfaces.backtest_engine import BacktestEngineBase
@@ -16,6 +16,15 @@ from ...core.entities.trade import Trade
 from ...core.entities.market_data import MarketDataBatch
 from ...core.value_objects.backtest_config import BacktestConfig
 from ...core.value_objects.backtest_result import BacktestResult
+
+# 멀티타임프레임 지원을 위한 import 추가
+try:
+    from ...core.entities.market_data import MultiTimeframeDataBatch
+    from ...core.interfaces.strategy import MultiTimeframeTradingStrategy
+    from ...core.utils.timeframe import TimeframeUtils
+    MULTI_TIMEFRAME_AVAILABLE = True
+except ImportError:
+    MULTI_TIMEFRAME_AVAILABLE = False
 
 
 class SimpleBacktestEngine(BacktestEngineBase):
@@ -39,6 +48,19 @@ class SimpleBacktestEngine(BacktestEngineBase):
         # 브로커 초기화
         self.broker.portfolio.cash = config.initial_cash
         
+        # 멀티타임프레임 전략인지 확인
+        is_multi_timeframe = (MULTI_TIMEFRAME_AVAILABLE and 
+                             isinstance(self.strategy, MultiTimeframeTradingStrategy) and
+                             hasattr(self.strategy, 'timeframes') and
+                             len(self.strategy.timeframes) > 1)
+        
+        if is_multi_timeframe:
+            return await self._execute_multi_timeframe_backtest(config, start_time)
+        else:
+            return await self._execute_single_timeframe_backtest(config, start_time)
+    
+    async def _execute_single_timeframe_backtest(self, config: BacktestConfig, start_time: datetime) -> BacktestResult:
+        """단일 타임프레임 백테스팅 실행 (기존 로직)"""
         # 데이터 로드 및 지표 사전 계산
         self._notify_progress(5.0, "데이터 로딩 중...")
         raw_data = await self._load_raw_data(config)
@@ -67,6 +89,170 @@ class SimpleBacktestEngine(BacktestEngineBase):
         except Exception as e:
             self._notify_progress(0.0, f"백테스팅 실패: {str(e)}")
             raise
+    
+    async def _execute_multi_timeframe_backtest(self, config: BacktestConfig, start_time: datetime) -> BacktestResult:
+        """멀티타임프레임 백테스팅 실행"""
+        if not MULTI_TIMEFRAME_AVAILABLE:
+            raise ImportError("MultiTimeframe components not available.")
+        
+        # 데이터 로드 및 멀티타임프레임 처리
+        self._notify_progress(5.0, "멀티타임프레임 데이터 로딩 중...")
+        
+        # 전략에서 타임프레임 정보 가져오기
+        timeframes = self.strategy.timeframes
+        base_timeframe = min(timeframes, key=TimeframeUtils.get_timeframe_minutes)
+        
+        # 멀티타임프레임 데이터 로드
+        multi_data = await self.data_provider.get_multi_timeframe_data(
+            symbols=config.symbols,
+            start=config.start_date,
+            end=config.end_date,
+            timeframes=timeframes,
+            base_timeframe=base_timeframe
+        )
+        
+        self._notify_progress(10.0, "멀티타임프레임 지표 계산 중...")
+        
+        # 각 타임프레임별로 지표 계산
+        enriched_multi_data = self.strategy.precompute_indicators_multi_timeframe(multi_data)
+        
+        # 전략 초기화
+        self.strategy.initialize(self.context)
+        self._notify_progress(20.0, "멀티타임프레임 전략 초기화 완료")
+        
+        # 멀티타임프레임 백테스팅 실행
+        try:
+            trades = await self._run_multi_timeframe_backtest_loop(config, enriched_multi_data, base_timeframe)
+            self._notify_progress(90.0, "성과 분석 중...")
+            
+            # 백테스팅 결과 생성
+            result = await self._create_result(config, start_time, datetime.now(), trades)
+            self._notify_progress(100.0, "멀티타임프레임 백테스팅 완료")
+            
+            # 전략 종료 처리
+            self.strategy.finalize(self.context)
+            
+            return result
+            
+        except Exception as e:
+            self._notify_progress(0.0, f"멀티타임프레임 백테스팅 실패: {str(e)}")
+            raise
+    
+    async def _run_multi_timeframe_backtest_loop(
+        self, 
+        config: BacktestConfig, 
+        enriched_multi_data: Dict[str, pl.DataFrame],
+        base_timeframe: str
+    ) -> List[Trade]:
+        """멀티타임프레임 백테스팅 루프 실행"""
+        import time
+        
+        all_trades = []
+        loop_start_time = time.time()
+        TIMEOUT_SECONDS = 30  # 30초 타임아웃
+        
+        # 기준 타임프레임의 시간 단위로 루프 실행
+        base_data = enriched_multi_data[base_timeframe]
+        
+        # 데이터 유효성 검증
+        if base_data.height == 0:
+            return all_trades
+        
+        # 타임스탬프별 그룹핑
+        time_groups = base_data.group_by("timestamp").agg(
+            pl.all().exclude("timestamp")
+        ).sort("timestamp")
+        
+        total_steps = time_groups.height
+        
+        # 성능 최적화: 처리 제한
+        if total_steps > 1000:
+            time_groups = time_groups.head(500)
+            total_steps = 500
+        
+        # 병목 측정용 변수들
+        filter_time_total = 0.0
+        strategy_time_total = 0.0
+        broker_time_total = 0.0
+        
+        for step, time_group in enumerate(time_groups.iter_rows(named=True)):
+            # 타임아웃 체크
+            current_time = time.time()
+            elapsed_time = current_time - loop_start_time
+            
+            if elapsed_time > TIMEOUT_SECONDS:
+                break
+            
+            timestamp = time_group["timestamp"]
+            
+            # 현재 시점까지의 멀티타임프레임 데이터 생성
+            filter_start = time.time()
+            timeframe_data = {}
+            for tf, df in enriched_multi_data.items():
+                current_batch_data = df.filter(pl.col("timestamp") <= timestamp)
+                timeframe_data[tf] = current_batch_data
+            filter_time_total += time.time() - filter_start
+            
+            if not timeframe_data or all(df.height == 0 for df in timeframe_data.values()):
+                continue
+            
+            # MultiTimeframeDataBatch 생성
+            multi_batch = MultiTimeframeDataBatch(
+                timeframe_data=timeframe_data,
+                symbols=config.symbols,
+                primary_timeframe=base_timeframe
+            )
+            
+            # 진행률 업데이트
+            if step % max(1, total_steps // 20) == 0:
+                progress = 20 + (step / total_steps) * 65
+                self._notify_progress(progress, f"멀티타임프레임 처리 중: {timestamp}")
+            
+            # 컨텍스트 업데이트
+            if self.context:
+                self.context.current_time = timestamp
+            
+            # 브로커에 시장 데이터 업데이트 (기준 타임프레임으로)
+            broker_start = time.time()
+            base_batch = MarketDataBatch(
+                data=timeframe_data[base_timeframe],
+                symbols=config.symbols,
+                timeframe=base_timeframe
+            )
+            self.broker.update_market_data(base_batch)
+            broker_time_total += time.time() - broker_start
+            
+            # 전략에서 멀티타임프레임 신호 생성
+            try:
+                strategy_start = time.time()
+                # 멀티타임프레임 전략의 경우 on_data를 오버로드하여 호출
+                if hasattr(self.strategy, 'on_data') and callable(getattr(self.strategy, 'on_data')):
+                    orders = self.strategy.on_data(multi_batch)
+                else:
+                    orders = []
+                strategy_time_total += time.time() - strategy_start
+                
+                # 생성된 주문들 실행
+                for order in orders:
+                    order_id = self.broker.submit_order(order)
+                    
+                    # 체결된 거래가 있는지 확인
+                    if order.is_filled:
+                        # 최근 거래를 찾아서 전략에 알림
+                        recent_trades = [
+                            trade for trade in self.broker.get_trades()
+                            if trade.order_id == order_id
+                        ]
+                        for trade in recent_trades:
+                            if trade not in all_trades:
+                                all_trades.append(trade)
+                                self.strategy.on_order_fill(trade)
+                                
+            except Exception as e:
+                print(f"멀티타임프레임 전략 실행 오류 (시간: {timestamp}): {e}")
+                continue
+        
+        return all_trades
     
     async def _load_raw_data(self, config: BacktestConfig) -> pl.DataFrame:
         """원본 OHLCV 데이터 로드"""
