@@ -5,11 +5,19 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Protocol, List, AsyncIterator, Optional
+from typing import Protocol, List, AsyncIterator, Optional, Dict
 from datetime import datetime
 import polars as pl
 
 from ..entities.market_data import MarketDataBatch
+
+# 멀티타임프레임 지원을 위한 import 추가
+try:
+    from ..utils.timeframe import TimeframeUtils
+    from ..entities.market_data import MultiTimeframeDataBatch
+    MULTI_TIMEFRAME_AVAILABLE = True
+except ImportError:
+    MULTI_TIMEFRAME_AVAILABLE = False
 
 
 class IDataProvider(Protocol):
@@ -55,12 +63,60 @@ class IDataProvider(Protocol):
         """
         ...
     
+    async def get_multi_timeframe_data(
+        self,
+        symbols: List[str],
+        start: datetime,
+        end: datetime,
+        timeframes: List[str],
+        base_timeframe: str = "1m"
+    ) -> Dict[str, pl.DataFrame]:
+        """멀티타임프레임 데이터 조회
+        
+        Args:
+            symbols: 심볼 리스트
+            start: 시작 시간
+            end: 종료 시간
+            timeframes: 목표 타임프레임 리스트 (예: ["5m", "1h", "1D"])
+            base_timeframe: 기준 타임프레임 (리샘플링 소스)
+            
+        Returns:
+            타임프레임별 데이터 딕셔너리 {"1m": df, "5m": df, "1h": df}
+        """
+        ...
+    
+    async def get_multi_timeframe_stream(
+        self,
+        symbols: List[str],
+        start: datetime,
+        end: datetime,
+        timeframes: List[str],
+        base_timeframe: str = "1m"
+    ) -> AsyncIterator:
+        """멀티타임프레임 데이터 스트림
+        
+        Args:
+            symbols: 심볼 리스트
+            start: 시작 시간
+            end: 종료 시간
+            timeframes: 목표 타임프레임 리스트
+            base_timeframe: 기준 타임프레임
+            
+        Yields:
+            시간순으로 정렬된 멀티타임프레임 데이터 배치
+        """
+        ...
+    
     def get_symbols(self) -> List[str]:
         """사용 가능한 심볼 목록"""
         ...
     
     def validate_symbols(self, symbols: List[str]) -> bool:
         """심볼 유효성 검증"""
+        ...
+    
+    def supports_timeframe(self, timeframe: str) -> bool:
+        """타임프레임 지원 여부 확인"""
         ...
 
 
@@ -86,6 +142,10 @@ class DataProviderBase(ABC):
         """시간 프레임 유효성 검증"""
         valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"]
         return timeframe.lower() in [tf.lower() for tf in valid_timeframes]
+    
+    def supports_timeframe(self, timeframe: str) -> bool:
+        """타임프레임 지원 여부 확인"""
+        return self.validate_timeframe(timeframe)
     
     def validate_date_range(self, start: datetime, end: datetime) -> bool:
         """날짜 범위 유효성 검증"""
@@ -167,4 +227,81 @@ class DataProviderBase(ABC):
     
     def _normalize_timeframe(self, timeframe: str) -> str:
         """시간 프레임 정규화"""
-        return timeframe.upper() 
+        return timeframe.upper()
+    
+    async def get_multi_timeframe_data(
+        self,
+        symbols: List[str],
+        start: datetime,
+        end: datetime,
+        timeframes: List[str],
+        base_timeframe: str = "1m"
+    ) -> Dict[str, pl.DataFrame]:
+        """멀티타임프레임 데이터 조회"""
+        if not MULTI_TIMEFRAME_AVAILABLE:
+            raise ImportError("MultiTimeframe components not available. Please ensure TimeframeUtils is properly installed.")
+        
+        # 유효성 검증
+        if not self.validate_symbols(symbols):
+            raise ValueError(f"Invalid symbols: {symbols}")
+        
+        for tf in [base_timeframe] + timeframes:
+            if not self.validate_timeframe(tf):
+                raise ValueError(f"Invalid timeframe: {tf}")
+        
+        if not self.validate_date_range(start, end):
+            raise ValueError(f"Invalid date range: {start} to {end}")
+        
+        # 기준 타임프레임 데이터 조회
+        base_data = await self._fetch_raw_data(symbols, start, end, base_timeframe)
+        base_data = self._post_process_data(base_data)
+        
+        # 멀티타임프레임 데이터 생성
+        result = {}
+        
+        # 기준 타임프레임 추가
+        result[base_timeframe] = base_data
+        
+        # 상위 타임프레임들 리샘플링
+        for timeframe in timeframes:
+            if timeframe != base_timeframe:
+                resampled_data = TimeframeUtils.resample_to_timeframe(base_data, timeframe)
+                result[timeframe] = resampled_data
+        
+        return result
+    
+    async def get_multi_timeframe_stream(
+        self,
+        symbols: List[str],
+        start: datetime,
+        end: datetime,
+        timeframes: List[str],
+        base_timeframe: str = "1m"
+    ) -> AsyncIterator:
+        """멀티타임프레임 데이터 스트림"""
+        if not MULTI_TIMEFRAME_AVAILABLE:
+            raise ImportError("MultiTimeframe components not available.")
+        
+        # 멀티타임프레임 데이터 조회
+        multi_data = await self.get_multi_timeframe_data(
+            symbols, start, end, timeframes, base_timeframe
+        )
+        
+        # 기준 타임프레임의 유니크 타임스탬프 기준으로 스트림 생성
+        base_data = multi_data[base_timeframe]
+        unique_timestamps = base_data.select("timestamp").unique().sort("timestamp")
+        
+        for timestamp_row in unique_timestamps.iter_rows(named=True):
+            timestamp = timestamp_row["timestamp"]
+            
+            # 각 타임프레임별로 해당 시점까지의 누적 데이터 생성
+            timeframe_data = {}
+            for tf, df in multi_data.items():
+                batch_data = df.filter(pl.col("timestamp") <= timestamp)
+                timeframe_data[tf] = batch_data
+            
+            # MultiTimeframeDataBatch 생성
+            yield MultiTimeframeDataBatch(
+                timeframe_data=timeframe_data,
+                symbols=symbols
+            ) 
