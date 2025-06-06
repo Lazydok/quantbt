@@ -235,9 +235,31 @@ class TradingStrategy(StrategyBase):
         return target_value / price if price > 0 else 0.0
     
     def get_portfolio_value(self) -> float:
-        """포트폴리오 가치 조회 (실제 구현에서는 브로커에서 조회)"""
-        # 임시 구현 - 실제로는 브로커/포트폴리오 매니저에서 조회
+        """포트폴리오 가치 조회"""
+        # 브로커가 연결되어 있으면 실제 값 조회
+        if hasattr(self, '_broker') and self._broker:
+            return self._broker.get_portfolio().equity
+        # 아니면 컨텍스트의 초기 자본 사용
+        elif self.context:
+            return self.context.initial_cash
+        # 최후의 수단으로 설정값 사용
         return self.get_config_value("initial_cash", 100000.0)
+    
+    def get_current_positions(self) -> Dict[str, float]:
+        """현재 포지션 조회"""
+        # 브로커가 연결되어 있으면 실제 포지션 조회
+        if hasattr(self, '_broker') and self._broker:
+            portfolio = self._broker.get_portfolio()
+            positions = {}
+            for symbol, position in portfolio.active_positions.items():
+                positions[symbol] = position.quantity
+            return positions
+        # 아니면 상태에서 조회
+        return self.state.get("positions", {})
+    
+    def set_broker(self, broker) -> None:
+        """브로커 연결"""
+        self._broker = broker
     
     def validate_order(self, order: Order, data: MarketDataBatch) -> bool:
         """트레이딩 전략용 주문 검증"""
@@ -250,11 +272,6 @@ class TradingStrategy(StrategyBase):
             return False
         
         return True
-    
-    def get_current_positions(self) -> Dict[str, Any]:
-        """현재 포지션 조회 (실제 구현에서는 포트폴리오 매니저에서 조회)"""
-        # 임시 구현
-        return self.state.get("positions", {})
     
     def is_new_position_order(self, order: Order) -> bool:
         """새로운 포지션 생성 주문인지 확인"""
