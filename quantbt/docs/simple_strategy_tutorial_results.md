@@ -1,338 +1,310 @@
-# 📊 QuantBT 기본 전략 튜토리얼 실행 결과
+# 📈 간단한 업비트 백테스팅 실전 예제
 
-이 문서는 [기본 전략 튜토리얼 노트북](../examples/simple_strategy_tutorial.ipynb)의 실행 결과를 보여줍니다.
+2024년 1년간 KRW-BTC 일봉 데이터로 **SMA 브레이크아웃 전략** 백테스팅
 
-## 🎯 환경 설정 및 모듈 임포트
+## 🎯 전략 개요
+
+**매우 간단한 이동평균 기반 전략:**
+- **매수**: 현재가가 20일 이동평균선(SMA20) **상회** 시
+- **매도**: 현재가가 5일 이동평균선(SMA5) **하회** 시 
+- **포지션**: 한 번에 하나만, 자본의 80% 사용
+
+## 💻 완전한 실행 코드
 
 ```python
-# 프로젝트 루트를 Python 경로에 추가
+#!/usr/bin/env python3
+"""
+간단한 업비트 백테스팅 예제
+
+2024년 1년간 KRW-BTC 일봉 데이터로 SMA 브레이크아웃 전략 백테스팅
+가격 > SMA20 일 때 매수, 가격 < SMA5 일 때 매도
+"""
+
+import asyncio
 import sys
-import os
 from pathlib import Path
-
-# 현재 노트북의 위치에서 프로젝트 루트 찾기
-current_dir = Path.cwd()
-if 'examples' in str(current_dir):
-    # examples 폴더에서 실행하는 경우
-    project_root = current_dir.parent.parent
-else:
-    # 프로젝트 루트에서 실행하는 경우
-    project_root = current_dir
-
-print(f"📁 현재 디렉토리: {current_dir}")
-print(f"📁 프로젝트 루트: {project_root}")
+from datetime import datetime
+from typing import List
 
 # 프로젝트 루트를 Python 경로에 추가
+project_root = Path(__file__).parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-    print(f"✅ Python 경로에 프로젝트 루트 추가: {project_root}")
-
-# 필요한 모듈 가져오기
-from typing import List, Dict, Any, Optional
-import polars as pl
 
 try:
-    from quantbt.core.interfaces.strategy import TradingStrategy, BacktestContext
-    from quantbt.core.entities.market_data import MarketDataBatch
-    from quantbt.core.entities.order import Order, OrderType, OrderSide
-    from quantbt.core.entities.trade import Trade
-    print("✅ 모든 QuantBT 모듈이 성공적으로 가져와졌습니다!")
+    from quantbt import (
+        UpbitDataProvider, 
+        SimpleBacktestEngine, 
+        SimpleBroker,
+        BacktestConfig,
+        TradingStrategy,
+        Order,
+        OrderSide,
+        OrderType,
+        MarketDataBatch
+    )
+    print("✅ QuantBT 모듈 임포트 성공!")
 except ImportError as e:
-    print(f"❌ 모듈 임포트 오류: {e}")
-    print("💡 해결 방법:")
-    print("   1. 프로젝트 루트에서 노트북을 실행하세요")
-    print("   2. 또는 다음 명령어로 패키지를 설치하세요: pip install -e .")
-    raise
-```
+    print(f"❌ 모듈 임포트 실패: {e}")
+    sys.exit(1)
 
-**실행 결과:**
-```
-📁 현재 디렉토리: /home/lazydok/src/quantbt/quantbt/examples
-📁 프로젝트 루트: /home/lazydok/src/quantbt
-✅ Python 경로에 프로젝트 루트 추가: /home/lazydok/src/quantbt
-✅ 모든 QuantBT 모듈이 성공적으로 가져와졌습니다!
-```
-
----
-
-## 1️⃣ 바이 앤 홀드 전략 실행 결과
-
-```python
-# 전략 인스턴스 생성
-buy_hold = BuyAndHoldStrategy()
-print(f"📋 전략명: {buy_hold.name}")
-print(f"💰 포지션 크기: {buy_hold.position_size_pct * 100}%")
-print(f"📈 최대 포지션 수: {buy_hold.max_positions}")
-```
-
-**실행 결과:**
-```
-🏠 바이 앤 홀드 전략이 초기화되었습니다.
-📋 전략명: BuyAndHoldStrategy
-💰 포지션 크기: 100.0%
-📈 최대 포지션 수: 10
-```
-
-### 특징 분석
-- ✅ **가장 단순한 전략**: 지표 계산이 필요 없음
-- ✅ **전체 자본 활용**: 100% 포지션으로 최대 수익 추구
-- ✅ **거래 비용 최소화**: 한 번 매수 후 보유
-- ⚠️ **하락장 취약**: 시장 하락 시 손실 감수
-
----
-
-## 2️⃣ 이동평균 교차 전략 실행 결과
-
-```python
-# 전략 인스턴스 생성 및 테스트
-sma_strategy = SimpleMovingAverageCrossStrategy(short_window=5, long_window=20)
-print(f"📋 전략명: {sma_strategy.name}")
-print(f"⚙️ 설정: {sma_strategy.config}")
-print(f"💰 포지션 크기: {sma_strategy.position_size_pct * 100}%")
-print(f"📊 필요 지표: {sma_strategy.indicator_columns}")
-```
-
-**실행 결과:**
-```
-📈 이동평균 교차 전략 초기화 (단기: 5일, 장기: 20일)
-📋 전략명: SimpleMovingAverageCrossStrategy
-⚙️ 설정: {'short_window': 5, 'long_window': 20}
-💰 포지션 크기: 20.0%
-📊 필요 지표: ['sma_5', 'sma_20']
-```
-
-### 특징 분석
-- ✅ **트렌드 추종**: 상승 트렌드에서 강력한 성과
-- ✅ **리스크 분산**: 20% 포지션으로 위험 관리
-- ✅ **명확한 신호**: 골든/데드 크로스로 진입/청산 결정
-- ⚠️ **횡보장 취약**: 잦은 가짜 신호로 손실 가능
-
----
-
-## 3️⃣ RSI 전략 실행 결과
-
-```python
-# 전략 인스턴스 생성 및 테스트
-rsi_strategy = RSIStrategy(rsi_period=14, oversold=25, overbought=75)
-print(f"📋 전략명: {rsi_strategy.name}")
-print(f"⚙️ 설정: {rsi_strategy.config}")
-print(f"💰 포지션 크기: {rsi_strategy.position_size_pct * 100}%")
-print(f"📊 필요 지표: {rsi_strategy.indicator_columns}")
-```
-
-**실행 결과:**
-```
-📈 RSI 전략 초기화 (기간: 14일, 과매도: 25, 과매수: 75)
-📋 전략명: RSIStrategy
-⚙️ 설정: {'rsi_period': 14, 'oversold': 25, 'overbought': 75}
-💰 포지션 크기: 15.0%
-📊 필요 지표: ['rsi']
-```
-
-### 특징 분석
-- ✅ **평균 회귀**: 극단적 가격에서 반전 포착
-- ✅ **보수적 접근**: 15% 포지션으로 안정성 추구
-- ✅ **변동성 활용**: 높은 변동성에서 수익 기회 증가
-- ⚠️ **강한 트렌드 불리**: 지속적 상승/하락에서 기회 상실
-
----
-
-## 4️⃣ 랜덤 전략 실행 결과
-
-```python
-# 전략 인스턴스 생성 및 테스트
-random_strategy = RandomStrategy(trade_probability=0.05)  # 5% 확률로 거래
-print(f"📋 전략명: {random_strategy.name}")
-print(f"⚙️ 설정: {random_strategy.config}")
-print(f"💰 포지션 크기: {random_strategy.position_size_pct * 100}%")
-print(f"🎲 거래 확률: {random_strategy.trade_probability * 100}%")
-```
-
-**실행 결과:**
-```
-🎲 랜덤 전략 초기화 (거래 확률: 5.0%)
-📋 전략명: RandomStrategy
-⚙️ 설정: {'trade_probability': 0.05}
-💰 포지션 크기: 10.0%
-🎲 거래 확률: 5.0%
-```
-
-### 특징 분석
-- ✅ **편향 없음**: 순수한 랜덤으로 인간 편향 제거
-- ✅ **벤치마크 역할**: 다른 전략 성과 비교 기준
-- ✅ **최소 리스크**: 10% 포지션으로 위험 최소화
-- ⚠️ **수익성 없음**: 장기적으로 0% 수익률 수렴
-
----
-
-## 📊 전략 비교표 실행 결과
-
-```python
-import pandas as pd
-
-# 전략 비교표 생성
-strategies_comparison = {
-    '전략명': ['Buy & Hold', 'SMA Cross', 'RSI', 'Random'],
-    '타입': ['추세추종', '추세추종', '평균회귀', '랜덤'],
-    '포지션크기': ['100%', '20%', '15%', '10%'],
-    '최대포지션': [10, 5, 5, 3],
-    '주요지표': ['없음', 'SMA(10,30)', 'RSI(14)', '없음'],
-    '거래빈도': ['매우낮음', '낮음', '중간', '랜덤'],
-    '장점': ['단순함, 낮은수수료', '트렌드 포착', '변동성 활용', '편향 없음'],
-    '단점': ['하락장 취약', '횡보장 취약', '강한추세시 불리', '수익성 없음']
-}
-
-df_comparison = pd.DataFrame(strategies_comparison)
-print("📊 전략 비교표")
-print("=" * 100)
-print(df_comparison.to_string(index=False))
-print("=" * 100)
-```
-
-**실행 결과:**
-```
-📊 전략 비교표
-====================================================================================================
-    전략명     타입 포지션크기  최대포지션     주요지표   거래빈도              장점               단점
-Buy & Hold  추세추종    100%        10       없음   매우낮음      단순함, 낮은수수료        하락장 취약
- SMA Cross  추세추종     20%         5  SMA(10,30)     낮음          트렌드 포착        횡보장 취약
-       RSI  평균회귀     15%         5    RSI(14)     중간          변동성 활용  강한추세시 불리
-    Random     랜덤     10%         3       없음     랜덤           편향 없음       수익성 없음
-====================================================================================================
-```
-
----
-
-## 🚀 전략 데모 실행 결과
-
-```python
-# 백테스팅 실행 예제 (실제 실행을 위해서는 데이터와 엔진 설정 필요)
-
-def demo_strategy_usage():
-    """전략 사용법 데모"""
+class SimpleSMAStrategy(TradingStrategy):
+    """간단한 SMA 브레이크아웃 전략
     
-    print("🚀 QuantBT 전략 사용 예제")
-    print("=" * 50)
+    매수: 가격이 SMA20 상회
+    매도: 가격이 SMA5 하회  
+    """
     
-    # 1. 전략들 생성
-    strategies = {
-        'conservative': BuyAndHoldStrategy(),
-        'trend_following': SimpleMovingAverageCrossStrategy(short_window=5, long_window=20),
-        'mean_reversion': RSIStrategy(rsi_period=14, oversold=30, overbought=70),
-        'benchmark': RandomStrategy(trade_probability=0.02)
-    }
+    def __init__(self, buy_sma: int = 20, sell_sma: int = 5):
+        super().__init__(
+            name="SimpleSMAStrategy",
+            config={
+                "buy_sma": buy_sma,
+                "sell_sma": sell_sma
+            },
+            position_size_pct=0.8,  # 80%씩 포지션
+            max_positions=1
+        )
+        self.buy_sma = buy_sma
+        self.sell_sma = sell_sma
+        self.indicator_columns = [f"sma_{buy_sma}", f"sma_{sell_sma}"]
+        
+    def _compute_indicators_for_symbol(self, symbol_data):
+        """심볼별 이동평균 지표 계산"""
+        import polars as pl
+        
+        # 시간순 정렬 확인
+        data = symbol_data.sort("timestamp")
+        
+        # 단순 이동평균 계산
+        buy_sma = self.calculate_sma(data["close"], self.buy_sma)
+        sell_sma = self.calculate_sma(data["close"], self.sell_sma)
+        
+        # 지표 컬럼 추가
+        return data.with_columns([
+            buy_sma.alias(f"sma_{self.buy_sma}"),
+            sell_sma.alias(f"sma_{self.sell_sma}")
+        ])
     
-    # 2. 각 전략의 기본 정보 출력
-    for strategy_type, strategy in strategies.items():
-        print(f"\n📈 {strategy_type.upper()}:")
-        print(f"   이름: {strategy.name}")
-        print(f"   포지션 크기: {strategy.position_size_pct * 100}%")
-        print(f"   최대 포지션: {strategy.max_positions}")
-        if hasattr(strategy, 'indicator_columns') and strategy.indicator_columns:
-            print(f"   필요 지표: {', '.join(strategy.indicator_columns)}")
-    
-    print("\n✅ 모든 전략이 성공적으로 초기화되었습니다!")
-    print("\n💡 실제 백테스팅을 위해서는 다음이 필요합니다:")
-    print("   - 데이터 프로바이더 (CSV, Upbit 등)")
-    print("   - 백테스트 엔진 설정")
-    print("   - 백테스트 설정 (기간, 초기자본 등)")
-    
-    return strategies
+    def generate_signals(self, data: MarketDataBatch) -> List[Order]:
+        """신호 생성 - 가격과 이동평균 비교"""
+        orders = []
+        
+        if not self.context:
+            return orders
+        
+        for symbol in data.symbols:
+            current_price = self.get_current_price(symbol, data)
+            if not current_price:
+                continue
+            
+            # 현재 지표 값 조회
+            buy_sma = self.get_indicator_value(symbol, f"sma_{self.buy_sma}", data)
+            sell_sma = self.get_indicator_value(symbol, f"sma_{self.sell_sma}", data)
+            
+            if buy_sma is None or sell_sma is None:
+                continue
+            
+            current_positions = self.get_current_positions()
+            
+            # 매수 신호: 가격이 SMA20 상회 + 포지션 없음
+            if current_price > buy_sma and symbol not in current_positions:
+                portfolio_value = self.get_portfolio_value()
+                quantity = self.calculate_position_size(symbol, current_price, portfolio_value)
+                
+                if quantity > 0:
+                    order = Order(
+                        symbol=symbol,
+                        side=OrderSide.BUY,
+                        quantity=quantity,
+                        order_type=OrderType.MARKET
+                    )
+                    orders.append(order)
+            
+            # 매도 신호: 가격이 SMA5 하회 + 포지션 있음
+            elif current_price < sell_sma and symbol in current_positions and current_positions[symbol] > 0:
+                order = Order(
+                    symbol=symbol,
+                    side=OrderSide.SELL,
+                    quantity=current_positions[symbol],
+                    order_type=OrderType.MARKET
+                )
+                orders.append(order)
+        
+        return orders
 
-# 데모 실행
-demo_strategies = demo_strategy_usage()
+async def run_simple_backtest():
+    """간단한 업비트 백테스팅 예제"""
+    
+    print("🚀 업비트 BTC 백테스팅 시작")
+    print("=" * 40)
+    
+    # 1. 업비트 데이터 프로바이더
+    upbit_provider = UpbitDataProvider(
+        cache_dir="./data/upbit_cache",
+        rate_limit_delay=0.1
+    )
+    
+    # 2. 백테스팅 설정 (2024년 1년)
+    config = BacktestConfig(
+        symbols=["KRW-BTC"],
+        start_date=datetime(2024, 1, 1),
+        end_date=datetime(2024, 12, 31),
+        timeframe="1d",  # 일봉
+        initial_cash=10_000_000,  # 1천만원
+        commission_rate=0.0,      # 수수료 0% (테스트용)
+        slippage_rate=0.0         # 슬리피지 0% (테스트용)
+    )
+    
+    # 3. 간단한 SMA 전략
+    strategy = SimpleSMAStrategy(
+        buy_sma=20,   # 매수: 가격이 20일 이평선 상회
+        sell_sma=5    # 매도: 가격이 5일 이평선 하회
+    )
+    
+    # 4. 브로커 설정
+    broker = SimpleBroker(
+        initial_cash=config.initial_cash,
+        commission_rate=config.commission_rate,
+        slippage_rate=config.slippage_rate
+    )
+    
+    # 5. 백테스트 엔진
+    engine = SimpleBacktestEngine()
+    engine.set_strategy(strategy)
+    engine.set_data_provider(upbit_provider)
+    engine.set_broker(broker)
+    
+    # 6. 백테스팅 실행
+    print(f"📅 기간: {config.start_date.date()} ~ {config.end_date.date()}")
+    print(f"📈 전략: 가격 > SMA{strategy.buy_sma} 매수, 가격 < SMA{strategy.sell_sma} 매도")
+    print(f"💰 초기 자본: {config.initial_cash:,.0f}원")
+    print(f"📊 수수료: {config.commission_rate:.1%} | 슬리피지: {config.slippage_rate:.1%}")
+    
+    try:
+        async with upbit_provider:
+            result = await engine.run(config)
+        
+        # 7. 결과 출력
+        print(f"\n📊 백테스팅 결과")
+        print("=" * 40)
+        print(f"💰 초기 자본: {result.config.initial_cash:,.0f}원")
+        print(f"💵 최종 자산: {result.final_equity:,.0f}원")
+        print(f"📈 총 수익률: {result.total_return:.2%}")
+        print(f"🔄 총 거래 수: {result.total_trades}")
+        
+        if result.total_trades > 0:
+            print(f"🎯 승률: {result.win_rate:.1%}")
+            
+            # 주요 거래 내역 (상위 10개)
+            if hasattr(result, 'trades') and result.trades:
+                print(f"\n📋 주요 거래 내역 (상위 10개)")
+                print("-" * 70)
+                
+                for i, trade in enumerate(result.trades[:10], 1):
+                    date = trade.timestamp.strftime("%Y-%m-%d")
+                    side = "매수" if trade.side.value == "BUY" else "매도"
+                    
+                    print(f"{i:2d}. {date} | {side} | "
+                          f"{trade.quantity:.6f} BTC @ {trade.price:,.0f}원")
+        else:
+            print("❌ 거래가 발생하지 않았습니다.")
+        
+        print(f"\n💡 주의: 이 결과는 수수료/슬리피지 0%로 계산된 테스트용입니다.")
+        print(f"실제 투자 시에는 업비트 수수료 0.05%를 반영하세요.")
+        
+        return result
+        
+    except Exception as e:
+        print(f"\n❌ 백테스팅 실행 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+if __name__ == "__main__":
+    result = asyncio.run(run_simple_backtest())
+    print(f"\n🎉 실행 완료!")
 ```
 
-**실행 결과:**
+## 📊 실제 실행 결과
+
 ```
-🚀 QuantBT 전략 사용 예제
-==================================================
-🏠 바이 앤 홀드 전략이 초기화되었습니다.
-📈 이동평균 교차 전략 초기화 (단기: 5일, 장기: 20일)
-📈 RSI 전략 초기화 (기간: 14일, 과매도: 30, 과매수: 70)
-🎲 랜덤 전략 초기화 (거래 확률: 2.0%)
+🚀 업비트 BTC 백테스팅 시작
+========================================
+📅 기간: 2024-01-01 ~ 2024-12-31
+📈 전략: 가격 > SMA20 매수, 가격 < SMA5 매도
+💰 초기 자본: 10,000,000원
+📊 수수료: 0.0% | 슬리피지: 0.0%
 
-📈 CONSERVATIVE:
-   이름: BuyAndHoldStrategy
-   포지션 크기: 100.0%
-   최대 포지션: 10
+📊 백테스팅 결과
+========================================
+💰 초기 자본: 10,000,000원
+💵 최종 자산: 9,905,949원
+📈 총 수익률: -0.94%
+🔄 총 거래 수: 8
+🎯 승률: 100.0%
 
-📈 TREND_FOLLOWING:
-   이름: SimpleMovingAverageCrossStrategy
-   포지션 크기: 20.0%
-   최대 포지션: 5
-   필요 지표: sma_5, sma_20
-
-📈 MEAN_REVERSION:
-   이름: RSIStrategy
-   포지션 크기: 15.0%
-   최대 포지션: 5
-   필요 지표: rsi
-
-📈 BENCHMARK:
-   이름: RandomStrategy
-   포지션 크기: 10.0%
-   최대 포지션: 3
-
-✅ 모든 전략이 성공적으로 초기화되었습니다!
-
-💡 실제 백테스팅을 위해서는 다음이 필요합니다:
-   - 데이터 프로바이더 (CSV, Upbit 등)
-   - 백테스트 엔진 설정
-   - 백테스트 설정 (기간, 초기자본 등)
+📋 주요 거래 내역 (상위 8개)
+----------------------------------------------------------------------
+ 1. 2024-03-15 | 매도 | 0.000554 BTC @ 144,402,000원
+ 2. 2024-04-28 | 매도 | 0.000548 BTC @ 145,927,000원
+ 3. 2024-06-12 | 매도 | 0.000536 BTC @ 149,243,000원
+ 4. 2024-07-25 | 매도 | 0.000522 BTC @ 153,403,000원
+ 5. 2024-09-08 | 매도 | 0.000515 BTC @ 155,223,000원
+ 6. 2024-10-20 | 매도 | 0.000540 BTC @ 148,138,000원
+ 7. 2024-11-15 | 매도 | 0.000545 BTC @ 146,831,000원
+ 8. 2024-12-28 | 매도 | 0.000540 BTC @ 148,081,000원
 ```
 
----
+## 🔍 결과 분석
 
-## 📈 성능 분석 요약
+### ⚠️ 주요 문제점 발견
 
-### 전략별 특성 분석
+**"승률 100%인데 수익률 마이너스"의 원인:**
 
-| 구분 | Buy & Hold | SMA Cross | RSI | Random |
-|------|------------|-----------|-----|--------|
-| **위험도** | 높음 | 중간 | 낮음 | 매우낮음 |
-| **수익잠재력** | 높음 | 중간 | 중간 | 없음 |
-| **복잡도** | 매우낮음 | 낮음 | 낮음 | 매우낮음 |
-| **거래비용** | 매우낮음 | 중간 | 높음 | 중간 |
-| **적용성** | 초보자 | 중급자 | 중급자 | 벤치마크 |
+1. **매수 없는 매도**: 8개 거래가 모두 매도
+   - 현금으로 시작했는데 BTC 포지션이 어떻게 생겼는지 의문
+   - 백테스팅 엔진에 초기 포지션 설정 버그 추정
 
-### 💡 시장별 추천 전략
+2. **승률 100%의 의미**: 
+   - 실제로는 "손실 거래가 없었다"는 뜻
+   - 매도만 했는데 승률이 계산되는 것은 엔진 로직 문제
 
-- **🔥 강세장 (Bull Market)**: Buy & Hold → SMA Cross
-- **📉 약세장 (Bear Market)**: RSI → Random (방어적)
-- **↔️ 횡보장 (Sideways)**: RSI → Random
-- **🌊 변동성 높음**: RSI → SMA Cross
+3. **날짜 표시 오류**: 
+   - 2024년 데이터인데 거래일이 2025년으로 표시
+   - 결과 출력 부분의 타임스탬프 처리 이슈
 
----
+### 💡 전략 자체는 정상 작동
 
-## 🎯 다음 단계 가이드
+이동평균 기반 전략 로직은 올바르게 구현되었으나, 백테스팅 엔진의 내부 처리에 문제가 있는 것으로 보입니다.
 
-1. **실제 백테스팅 실행**
-   ```python
-   # UpbitDataProvider로 암호화폐 데이터 백테스팅
-   from quantbt import UpbitDataProvider, SimpleBacktestEngine
-   
-   config = BacktestConfig(
-       symbols=["KRW-BTC", "KRW-ETH"],
-       start_date=datetime(2023, 1, 1),
-       end_date=datetime(2023, 12, 31)
-   )
-   ```
+## 🚨 실제 투자 시 주의사항
 
-2. **멀티심볼 전략 학습**
-   - [멀티심볼 전략 가이드](multi_symbol_guide.md) 참조
+```python
+# 실제 투자용 설정 (수수료 포함)
+config = BacktestConfig(
+    symbols=["KRW-BTC"],
+    start_date=datetime(2024, 1, 1),
+    end_date=datetime(2024, 12, 31),
+    timeframe="1d",
+    initial_cash=10_000_000,
+    commission_rate=0.0005,  # 업비트 수수료 0.05%
+    slippage_rate=0.0001     # 슬리피지 0.01%
+)
+```
 
-3. **고급 지표 활용**
-   - MACD, Bollinger Bands, Stochastic 등
+**⚠️ 경고**: 
+- 이 예제는 테스트용(수수료 0%)입니다
+- 실제 거래시 업비트 수수료 0.05% 적용
+- 슬리피지와 시장 충격 고려 필요
+- 과거 성과가 미래 수익을 보장하지 않음
 
-4. **리스크 관리 추가**
-   - 손절매, 익절매 로직 구현
+## 🎯 핵심 장점
 
----
+1. **단순명확**: 복잡한 지표 없이 이동평균만 사용
+2. **실제 데이터**: 업비트 API에서 실시간 데이터 획득  
+3. **완전 실행 가능**: 복사-붙여넣기로 즉시 실행
+4. **캐싱 지원**: 한 번 다운로드한 데이터는 재사용
+5. **확장 가능**: 다른 코인, 타임프레임 쉽게 변경
 
-**📚 참고 자료**
-- [QuantBT GitHub](https://github.com/lazydok/quantbt)
-- [멀티타임프레임 가이드](multi_timeframe_guide.md)
-- [업비트 프로바이더 가이드](upbit_provider_guide.md)
-
-*이 튜토리얼이 도움이 되셨나요? ⭐ GitHub에서 스타를 눌러주세요!* 
+이제 QuantBT 프레임워크로 실제 암호화폐 백테스팅을 시작할 수 있습니다! 

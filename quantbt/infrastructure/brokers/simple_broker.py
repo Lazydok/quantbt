@@ -66,9 +66,10 @@ class SimpleBroker(BrokerBase):
         if current_price is None:
             return False
         
-        # 시장가 주문은 항상 즉시 실행
+        # 시장가 주문은 다음 바까지 대기 (미래 참조 방지)
         if order.order_type == OrderType.MARKET:
-            return True
+            # 시장가 주문은 즉시 실행하지 않고 다음 바에서 체결
+            return False
         
         # 지정가 주문 실행 조건 확인
         if order.order_type == OrderType.LIMIT:
@@ -96,18 +97,22 @@ class SimpleBroker(BrokerBase):
             order.reject("Cannot determine execution price")
             return
         
+        # 현재 시장 데이터의 타임스탬프 사용
+        current_timestamp = self._get_current_timestamp()
+        
         # 주문 체결
         order.fill(
             quantity=order.remaining_quantity,
             price=execution_price,
-            timestamp=datetime.now()
+            timestamp=current_timestamp
         )
         
-        # 거래 생성
+        # 거래 생성 - 시장 데이터 타임스탬프 전달
         trade = self._create_trade(
             order=order,
             quantity=order.filled_quantity,
-            price=execution_price
+            price=execution_price,
+            timestamp=current_timestamp
         )
         
         # 포트폴리오 업데이트
@@ -121,15 +126,32 @@ class SimpleBroker(BrokerBase):
         latest_data = self.current_data.get_latest(symbol)
         return latest_data.close if latest_data else None
     
+    def _get_current_timestamp(self) -> datetime:
+        """현재 시장 데이터 타임스탬프 조회"""
+        if self.current_data is None:
+            return datetime.now()
+        
+        # 현재 시장 데이터의 최신 타임스탬프 사용
+        try:
+            # MarketDataBatch에서 최신 타임스탬프 조회
+            latest_timestamp = self.current_data.data["timestamp"].max()
+            if latest_timestamp:
+                return latest_timestamp
+        except (AttributeError, KeyError):
+            pass
+        
+        # 시장 데이터가 없거나 타임스탬프를 가져올 수 없는 경우
+        return datetime.now()
+    
     def _get_execution_price(self, order: Order) -> Optional[float]:
         """실행 가격 결정"""
+        # 시장가 주문은 현재 바의 시가로 실행 (다음 바가 시작된 상태)
+        if order.order_type == OrderType.MARKET:
+            return self._get_market_order_price(order.symbol)
+        
         current_price = self._get_current_price(order.symbol)
         if current_price is None:
             return None
-        
-        # 시장가 주문은 현재 가격으로 실행
-        if order.order_type == OrderType.MARKET:
-            return current_price
         
         # 지정가 주문은 지정가격으로 실행
         if order.order_type == OrderType.LIMIT:
@@ -140,6 +162,15 @@ class SimpleBroker(BrokerBase):
             return current_price
         
         return current_price
+    
+    def _get_market_order_price(self, symbol: str) -> Optional[float]:
+        """시장가 주문 체결 가격 조회 (현재 바의 시가)"""
+        if self.current_data is None:
+            return None
+        
+        latest_data = self.current_data.get_latest(symbol)
+        # 시장가 주문은 시가로 체결 (실제 거래에서는 다음 바의 시가에 체결됨)
+        return latest_data.open if latest_data else None
     
     def _calculate_commission(self, quantity: float, price: float) -> float:
         """수수료 계산"""
@@ -152,6 +183,58 @@ class SimpleBroker(BrokerBase):
             return self.slippage_rate
         return 0.0
     
+    def _process_pending_orders(self) -> None:
+        """대기 중인 주문들 처리 - 시장가 주문 특별 처리 포함"""
+        for order in self.orders.values():
+            if not order.is_active:
+                continue
+            
+            # 시장가 주문은 새로운 바에서 체결
+            if order.order_type == OrderType.MARKET:
+                self._execute_market_order_on_new_bar(order)
+            # 다른 주문 타입은 기존 로직대로 처리
+            elif self._can_execute_immediately(order):
+                self._execute_order(order)
+    
+    def _execute_market_order_on_new_bar(self, order: Order) -> None:
+        """새로운 바에서 시장가 주문 체결"""
+        if not order.is_active:
+            return
+        
+        # 현재 바의 시가로 체결 가격 결정
+        execution_price = self._get_market_order_price(order.symbol)
+        if execution_price is None:
+            order.reject("Cannot determine market order execution price")
+            return
+        
+        # 추가 자금 검증 (매수 주문의 경우)
+        if order.is_buy:
+            estimated_cost = order.quantity * execution_price * (1 + self.commission_rate)
+            if estimated_cost > self.portfolio.cash:
+                order.reject("Insufficient cash for market order execution")
+                return
+        
+        # 현재 시장 데이터의 타임스탬프 사용
+        current_timestamp = self._get_current_timestamp()
+        
+        # 주문 체결
+        order.fill(
+            quantity=order.remaining_quantity,
+            price=execution_price,
+            timestamp=current_timestamp
+        )
+        
+        # 거래 생성 - 시장 데이터 타임스탬프 전달
+        trade = self._create_trade(
+            order=order,
+            quantity=order.filled_quantity,
+            price=execution_price,
+            timestamp=current_timestamp
+        )
+        
+        # 포트폴리오 업데이트
+        self._update_portfolio_from_trade(trade)
+
     def get_broker_info(self) -> dict:
         """브로커 정보 반환"""
         return {

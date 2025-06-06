@@ -7,14 +7,13 @@ name = "quantbt"
 version = "0.1.0"
 description = "고성능 퀀트 트레이딩 백테스팅 엔진"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "QuantBT Team", email = "soundlayerd@gmail.com"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Financial and Insurance Industry",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -49,6 +48,11 @@ dev = [
 Homepage = "https://github.com/lazydok/quantbt"
 Repository = "https://github.com/lazydok/quantbt"
 Documentation = "https://github.com/lazydok/quantbt/docs"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quantbt*"]
+exclude = ["tests*", "data*", "dev_docs*"]
 
 [tool.pytest.ini_options]
 markers = [

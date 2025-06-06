@@ -259,14 +259,12 @@ class DataProviderBase(ABC):
         # 멀티타임프레임 데이터 생성
         result = {}
         
-        # 기준 타임프레임 추가
-        result[base_timeframe] = base_data
-        
-        # 상위 타임프레임들 리샘플링
-        for timeframe in timeframes:
-            if timeframe != base_timeframe:
-                resampled_data = TimeframeUtils.resample_to_timeframe(base_data, timeframe)
-                result[timeframe] = resampled_data
+        # TimeframeUtils를 사용하여 효율적인 멀티 타임프레임 데이터 생성
+        result = TimeframeUtils.create_multi_timeframe_data(
+            base_data=base_data,
+            timeframes=timeframes,
+            base_timeframe=base_timeframe
+        )
         
         return result
     

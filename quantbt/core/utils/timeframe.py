@@ -71,9 +71,9 @@ class TimeframeUtils:
             r"^5m$|^5min$|^5minutes$": "5m", 
             r"^15m$|^15min$|^15minutes$": "15m",
             r"^30m$|^30min$|^30minutes$": "30m",
-            r"^1h$|^1hr$|^1hour$": "1h",
-            r"^4h$|^4hr$|^4hours$": "4h",
-            r"^1d$|^1day$|^daily$": "1d",
+            r"^1h$|^1hr$|^1hour$|^60min$|^60minutes$": "1h",
+            r"^4h$|^4hr$|^4hours$|^240min$|^240minutes$": "4h",
+            r"^1d$|^1day$|^daily$|^1440min$|^1440minutes$": "1d",
             r"^1w$|^1week$|^weekly$": "1w"
         }
         

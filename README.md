@@ -132,6 +132,8 @@ pip install polars numpy pydantic click
 
 ### 3. 기본 사용법
 
+[📊 기본 전략 튜토리얼 Jupyter Notebook 으로 배우기 <-- 클릭](quantbt/examples/simple_strategy_tutorial.ipynb) 
+
 ```python
 import asyncio
 from quantbt import (
@@ -450,8 +452,8 @@ class CustomDataProvider(IDataProvider):
   - [성능 최적화 가이드](quantbt/docs/performance.md)
   - [지표 계산 레퍼런스](quantbt/docs/indicators.md)
 - **예제 코드**
-  - [📊 기본 전략 튜토리얼](quantbt/examples/simple_strategy_tutorial.ipynb) 🆕
-  - [📋 튜토리얼 실행 결과](quantbt/docs/simple_strategy_tutorial_results.md) 🆕
+  - [📊 기본 전략 튜토리얼](quantbt/examples/simple_strategy_tutorial.ipynb) 
+  - [📋 튜토리얼 실행 결과](quantbt/docs/simple_strategy_tutorial_results.md)
   - [전체 예제 코드](quantbt/examples/)
 
 ## 🤝 기여하기
