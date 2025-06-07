@@ -234,7 +234,8 @@ class BacktestResult:
                     x=dates[1:], y=returns,
                     name="Daily Returns",
                     marker_color=colors,
-                    opacity=0.7
+                    opacity=0.7,
+                    showlegend=False
                 ),
                 row=2, col=1
             )
@@ -248,7 +249,8 @@ class BacktestResult:
                     x=drawdown_dates, y=drawdown,
                     name="Drawdown",
                     fill="tozeroy",
-                    line=dict(color="red", width=1)
+                    line=dict(color="red", width=1),
+                    showlegend=False
                 ),
                 row=3, col=1
             )
