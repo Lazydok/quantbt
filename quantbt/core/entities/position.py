@@ -201,8 +201,8 @@ class Portfolio:
     
     @property
     def equity(self) -> float:
-        """총 자본 (현금 + 포지션 가치 + 미실현 손익)"""
-        return self.cash + self.total_notional_value + self.total_unrealized_pnl
+        """총 자본 (현금 + 포지션 시장가치)"""
+        return self.cash + self.total_market_value
     
     @property
     def active_positions(self) -> Dict[str, Position]:

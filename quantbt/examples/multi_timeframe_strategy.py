@@ -206,10 +206,7 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
                             order_type=OrderType.MARKET
                         ))
                         
-                        self.log_debug(
-                            f"BUY signal for {symbol}: hourly_trend={trend_direction}, price={current_price:.2f}",
-                            timeframe="5m"
-                        )
+
             
             elif signal_type == "sell" and symbol in current_positions:
                 orders.append(Order(
@@ -219,10 +216,7 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
                     order_type=OrderType.MARKET
                 ))
                 
-                self.log_debug(
-                    f"SELL signal for {symbol}: reason={signal_type}",
-                    timeframe="5m"
-                )
+
         
         return orders
     
@@ -483,7 +477,6 @@ class MultiTimeframeMACDRSIStrategy(MultiTimeframeTradingStrategy):
                     ))
                     
                     buy_count += 1
-                    self.log_debug(f"BUY signal for {symbol}: strength={strength:.3f}")
         
         # 매도 신호 처리
         for symbol, strength, price in signals:
@@ -495,7 +488,7 @@ class MultiTimeframeMACDRSIStrategy(MultiTimeframeTradingStrategy):
                     order_type=OrderType.MARKET
                 ))
                 
-                self.log_debug(f"SELL signal for {symbol}: strength={strength:.3f}")
+
         
         return orders
     
@@ -737,7 +730,7 @@ class MultiTimeframeMomentumStrategy(MultiTimeframeTradingStrategy):
                             order_type=OrderType.MARKET
                         ))
                         
-                        self.log_debug(f"STRONG BUY signal for {symbol}")
+
             
             elif signal in ["sell", "stop_loss"] and symbol in current_positions:
                 orders.append(Order(
@@ -747,7 +740,7 @@ class MultiTimeframeMomentumStrategy(MultiTimeframeTradingStrategy):
                     order_type=OrderType.MARKET
                 ))
                 
-                self.log_debug(f"SELL signal for {symbol}: reason={signal}")
+
         
         return orders
     

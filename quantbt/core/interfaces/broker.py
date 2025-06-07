@@ -192,12 +192,23 @@ class BrokerBase(ABC):
     
     def _update_portfolio_from_trade(self, trade: Trade) -> None:
         """거래로부터 포트폴리오 업데이트"""
+        # 거래 전 포지션 정보 기록
+        current_position = self.portfolio.get_position(trade.symbol)
+        trade.position_size_before = current_position.quantity
+        trade.avg_price_before = current_position.avg_price
+        
         # 포지션 업데이트
         realized_pnl = self.portfolio.update_position(
             trade.symbol, 
             trade.signed_quantity, 
             trade.price
         )
+        
+        # 거래 후 포지션 정보 기록
+        updated_position = self.portfolio.get_position(trade.symbol)
+        trade.position_size_after = updated_position.quantity
+        trade.avg_price_after = updated_position.avg_price
+        trade.realized_pnl = realized_pnl
         
         # 현금 업데이트 (거래 비용 차감)
         if trade.side.value == 1:  # 매수

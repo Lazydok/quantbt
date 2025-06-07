@@ -257,7 +257,7 @@ class AdvancedMultiTimeframeStrategy(MultiTimeframeTradingStrategy):
                             }
                         ))
                         
-                        print(f"🚀 {symbol} 강한 매수 신호! 점수: {signal_score:.2f}")
+        
             
             # 매도 조건: 리스크 또는 신호 약화
             elif symbol in current_positions:
@@ -277,7 +277,7 @@ class AdvancedMultiTimeframeStrategy(MultiTimeframeTradingStrategy):
                         }
                     ))
                     
-                    print(f"📉 {symbol} 매도 신호: {exit_signal}")
+    
         
         return orders
     
