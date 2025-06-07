@@ -22,10 +22,13 @@ from .core.interfaces.strategy import StrategyBase, TradingStrategy, MultiTimefr
 # 백테스팅 설정 및 결과
 from .core.value_objects.backtest_config import BacktestConfig
 from .core.value_objects.backtest_result import BacktestResult
+from .core.value_objects.grid_search_config import GridSearchConfig, SMAGridSearchConfig
+from .core.value_objects.grid_search_result import GridSearchResult, GridSearchSummary
 
 # 백테스팅 엔진
 from .core.interfaces.backtest_engine import IBacktestEngine, BacktestEngineBase
 from .infrastructure.engine.simple_engine import SimpleBacktestEngine
+from .infrastructure.engine.parallel_backtest_engine import ParallelBacktestEngine
 
 # 데이터 제공자
 from .infrastructure.data.csv_provider import CSVDataProvider
@@ -68,9 +71,14 @@ __all__ = [
     # 백테스팅
     "BacktestConfig",
     "BacktestResult",
+    "GridSearchConfig",
+    "SMAGridSearchConfig", 
+    "GridSearchResult",
+    "GridSearchSummary",
     "IBacktestEngine",
     "BacktestEngineBase",
     "SimpleBacktestEngine",
+    "ParallelBacktestEngine",
     
     # 인프라스트럭처
     "CSVDataProvider",

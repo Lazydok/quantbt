@@ -140,7 +140,7 @@ class BasicMultiTimeframeStrategy(MultiTimeframeTradingStrategy):
                             }
                         ))
                         
-                        print(f"📈 {symbol} 매수 신호: 1H 트렌드={hourly_trend}, 5M 신호={entry_signal}")
+        
             
             # 매도 조건
             elif symbol in current_positions:
@@ -158,7 +158,7 @@ class BasicMultiTimeframeStrategy(MultiTimeframeTradingStrategy):
                         }
                     ))
                     
-                    print(f"📉 {symbol} 매도 신호: 사유={exit_signal}, 1H 트렌드={hourly_trend}")
+    
         
         return orders
     

@@ -49,11 +49,11 @@ class BacktestResult:
     portfolio_history: Optional[pl.DataFrame] = None
     equity_curve: Optional[pl.DataFrame] = None
     
-    # 벤치마크 데이터 (시각화 모드에서 수집)
+    # 벤치마크 데이터 (save_portfolio_history=True일 때 수집)
     benchmark_equity_curve: Optional[pl.DataFrame] = None
     benchmark_returns: Optional[pl.DataFrame] = None
     
-    # 시각화용 추가 데이터
+    # 상세 분석용 추가 데이터 (save_portfolio_history=True일 때 수집)
     daily_returns: Optional[pl.DataFrame] = None
     monthly_returns: Optional[pl.DataFrame] = None
     drawdown_periods: Optional[pl.DataFrame] = None
@@ -163,13 +163,13 @@ class BacktestResult:
                 go.Scatter(
                     x=dates, y=normalized_benchmark,
                     name="Benchmark",
-                    line=dict(color="gray", width=1, dash="dash")
+                    line=dict(color="gray", width=1, dash="dot")
                 ),
                 row=1, col=1
             )
         
-        # 매수/매도 시그널 추가 (정규화된 포트폴리오 값 기준)
-        if show_signals and self.trade_signals is not None:
+        # 매수/매도 시그널 추가 (벤치마크 차트 기준)
+        if show_signals and self.trade_signals is not None and normalized_benchmark is not None:
             buy_signals = self.trade_signals.filter(pl.col("signal") == "BUY")
             sell_signals = self.trade_signals.filter(pl.col("signal") == "SELL")
             
@@ -178,16 +178,16 @@ class BacktestResult:
             
             if len(buy_signals) > 0:
                 buy_dates = buy_signals["timestamp"].to_list()
-                # 해당 날짜의 정규화된 포트폴리오 값 찾기
+                # 해당 날짜의 정규화된 벤치마크 값 찾기
                 buy_y_values = []
                 for buy_date in buy_dates:
                     if buy_date in date_to_index:
                         idx = date_to_index[buy_date]
-                        buy_y_values.append(normalized_equity[idx])
+                        buy_y_values.append(normalized_benchmark[idx])
                     else:
                         # 가장 가까운 날짜 찾기
                         closest_idx = min(range(len(dates)), key=lambda i: abs((dates[i] - buy_date).total_seconds()))
-                        buy_y_values.append(normalized_equity[closest_idx])
+                        buy_y_values.append(normalized_benchmark[closest_idx])
                 
                 fig.add_trace(
                     go.Scatter(
@@ -202,16 +202,16 @@ class BacktestResult:
             
             if len(sell_signals) > 0:
                 sell_dates = sell_signals["timestamp"].to_list()
-                # 해당 날짜의 정규화된 포트폴리오 값 찾기
+                # 해당 날짜의 정규화된 벤치마크 값 찾기
                 sell_y_values = []
                 for sell_date in sell_dates:
                     if sell_date in date_to_index:
                         idx = date_to_index[sell_date]
-                        sell_y_values.append(normalized_equity[idx])
+                        sell_y_values.append(normalized_benchmark[idx])
                     else:
                         # 가장 가까운 날짜 찾기
                         closest_idx = min(range(len(dates)), key=lambda i: abs((dates[i] - sell_date).total_seconds()))
-                        sell_y_values.append(normalized_equity[closest_idx])
+                        sell_y_values.append(normalized_benchmark[closest_idx])
                 
                 fig.add_trace(
                     go.Scatter(
@@ -278,10 +278,10 @@ class BacktestResult:
                                 bins: int = 50,
                                 figsize: tuple = (12, 8)) -> None:
         """
-        수익률 분포 히스토그램 (결과 차트2)
+        Returns distribution histogram (Result Chart 2)
         Args:
-            period: 'daily', 'weekly', 'monthly' 중 선택
-            bins: 히스토그램 구간 수
+            period: Choose from 'daily', 'weekly', 'monthly'
+            bins: Number of histogram bins
         """
         if not self._check_visualization_data():
             return
@@ -290,63 +290,63 @@ class BacktestResult:
             import plotly.graph_objects as go
             import plotly.figure_factory as ff
         except ImportError:
-            print("시각화를 위해 plotly를 설치해주세요: pip install plotly")
+            print("Please install plotly for visualization: pip install plotly")
             return
         
-        # 수익률 데이터 선택
+        # Select returns data
         if period == "monthly" and self.monthly_returns is not None:
             returns = self.monthly_returns["return"].to_numpy()
-            title = "월간 수익률 분포"
+            title = "Monthly Returns Distribution"
         elif period == "daily" and self.daily_returns is not None:
             returns = self.daily_returns["return"].to_numpy()
-            title = "일간 수익률 분포"
+            title = "Daily Returns Distribution"
         else:
-            print(f"{period} 수익률 데이터가 없습니다.")
+            print(f"{period} returns data is not available.")
             return
         
-        # 히스토그램 생성
+        # Create histogram
         fig = go.Figure()
         
         fig.add_trace(go.Histogram(
             x=returns,
             nbinsx=bins,
-            name="수익률 분포",
+            name="Returns Distribution",
             marker_color="lightblue",
             opacity=0.7
         ))
         
-        # 정규분포 곡선 추가
+        # Add normal distribution curve
         mean_return = np.mean(returns)
         std_return = np.std(returns)
         
-        # division by zero 방지
+        # Prevent division by zero
         if std_return > 0:
             x_range = np.linspace(returns.min(), returns.max(), 100)
             normal_dist = (1 / (std_return * np.sqrt(2 * np.pi))) * \
                          np.exp(-0.5 * ((x_range - mean_return) / std_return) ** 2)
         else:
-            # 표준편차가 0인 경우 정규분포 곡선을 그리지 않음
+            # Don't draw normal distribution curve when std is 0
             x_range = np.array([])
             normal_dist = np.array([])
         
-        # 정규분포 곡선이 계산된 경우에만 추가
+        # Add normal distribution curve only if calculated
         if len(x_range) > 0:
             fig.add_trace(go.Scatter(
                 x=x_range,
                 y=normal_dist * len(returns) * (returns.max() - returns.min()) / bins,
                 mode="lines",
-                name="정규분포",
+                name="Normal Distribution",
                 line=dict(color="red", width=2)
             ))
         
-        # 통계 정보 추가
+        # Add statistical information
         fig.add_annotation(
             x=0.7, y=0.9,
             xref="paper", yref="paper",
-            text=f"평균: {mean_return:.4f}<br>" +
-                 f"표준편차: {std_return:.4f}<br>" +
-                 f"왜도: {self._calculate_skewness(returns):.2f}<br>" +
-                 f"첨도: {self._calculate_kurtosis(returns):.2f}",
+            text=f"Mean: {mean_return:.4f}<br>" +
+                 f"Std Dev: {std_return:.4f}<br>" +
+                 f"Skewness: {self._calculate_skewness(returns):.2f}<br>" +
+                 f"Kurtosis: {self._calculate_kurtosis(returns):.2f}",
             showarrow=False,
             bgcolor="white",
             bordercolor="black",
@@ -355,8 +355,8 @@ class BacktestResult:
         
         fig.update_layout(
             title=title,
-            xaxis_title="수익률",
-            yaxis_title="빈도",
+            xaxis_title="Returns",
+            yaxis_title="Frequency",
             template="plotly_white",
             height=500
         )
@@ -396,6 +396,8 @@ class BacktestResult:
             x=[month_names[i-1] for i in heatmap_data.columns],
             y=year_labels,
             colorscale='RdYlGn',
+            zmin=-0.2,  # -20% 고정
+            zmax=0.2,   # +20% 고정
             text=np.round(heatmap_data.values * 100, 2),
             texttemplate="%{text}%",
             textfont={"size": 10},
@@ -422,8 +424,8 @@ class BacktestResult:
         
         fig.show()
     
-    def show_performance_comparison(self, benchmark_name: str = "벤치마크") -> None:
-        """벤치마크와의 성과 비교 표 (결과 차트4)"""
+    def show_performance_comparison(self, benchmark_name: str = "Benchmark") -> None:
+        """Performance comparison table with benchmark (Result Chart 4) - 안전성 강화"""
         if not self._check_visualization_data():
             return
         
@@ -431,147 +433,203 @@ class BacktestResult:
             import pandas as pd
             from IPython.display import display, HTML
         except ImportError:
-            print("성과 비교를 위해 pandas와 IPython을 설치해주세요")
+            print("📊 성과 비교표를 보려면 pandas와 IPython을 설치해주세요: pip install pandas ipython")
             return
         
-        # 벤치마크 지표 계산
-        benchmark_metrics = self._calculate_benchmark_metrics() if self.benchmark_returns is not None else {}
-        
-        # 비교 데이터 생성
-        comparison_data = {
-            "지표": [
-                "총 수익률 (%)",
-                "연간 수익률 (%)", 
-                "변동성 (%)",
-                "샤프 비율",
-                "칼마 비율",
-                "소르티노 비율",
-                "최대 낙폭 (%)",
-                "베타",
-                "알파",
-                "총 거래 횟수",
-                "승률 (%)",
-                "수익 인수",
-                "평균 보유기간 (일)",
-                "최대 연속 승리",
-                "최대 연속 패배"
-            ],
-            "전략": [
-                f"{self.total_return_pct:.2f}",
-                f"{self.annual_return_pct:.2f}",
-                f"{self.volatility_pct:.2f}",
-                f"{self.sharpe_ratio:.2f}",
-                f"{self._calculate_calmar_ratio():.2f}",
-                f"{self._calculate_sortino_ratio():.2f}",
-                f"{self.max_drawdown_pct:.2f}",
-                f"{self._calculate_beta():.2f}",
-                f"{self._calculate_alpha():.2f}",
-                f"{self.total_trades}",
-                f"{self.win_rate_pct:.1f}",
-                f"{self.profit_factor:.2f}",
-                f"{self._calculate_avg_holding_period():.1f}",
-                f"{self._calculate_max_consecutive_wins()}",
-                f"{self._calculate_max_consecutive_losses()}"
-            ]
-        }
-        
-        # 벤치마크 데이터 추가
-        if benchmark_metrics:
-            comparison_data[benchmark_name] = [
-                f"{benchmark_metrics.get('total_return_pct', 0):.2f}",
-                f"{benchmark_metrics.get('annual_return_pct', 0):.2f}",
-                f"{benchmark_metrics.get('volatility_pct', 0):.2f}",
-                f"{benchmark_metrics.get('sharpe_ratio', 0):.2f}",
-                f"{benchmark_metrics.get('calmar_ratio', 0):.2f}",
-                f"{benchmark_metrics.get('sortino_ratio', 0):.2f}",
-                f"{benchmark_metrics.get('max_drawdown_pct', 0):.2f}",
-                "1.00",  # 벤치마크의 베타는 항상 1
-                "0.00",  # 벤치마크의 알파는 항상 0
-                "-", "-", "-", "-", "-", "-"  # 거래 관련 지표는 해당 없음
-            ]
-        
-        # DataFrame 생성 및 표시
-        df = pd.DataFrame(comparison_data)
-        
-        # 스타일링
-        def highlight_better(row):
-            if row.name < 9:  # 성과 지표들
-                try:
-                    strategy_val = float(row['전략'].replace('%', ''))
-                    if len(row) > 2:  # 벤치마크 데이터가 있는 경우
-                        benchmark_val = float(row.iloc[2].replace('%', ''))
-                        
-                        # 더 좋은 값에 따라 색상 결정
-                        if row.name in [6]:  # 최대 낙폭 (낮을수록 좋음)
-                            if strategy_val < benchmark_val:
-                                return ['', 'background-color: lightgreen', 'background-color: lightcoral']
-                            else:
-                                return ['', 'background-color: lightcoral', 'background-color: lightgreen']
-                        else:  # 나머지 지표들 (높을수록 좋음)
-                            if strategy_val > benchmark_val:
-                                return ['', 'background-color: lightgreen', 'background-color: lightcoral']
-                            else:
-                                return ['', 'background-color: lightcoral', 'background-color: lightgreen']
-                except:
-                    pass
+        try:
+            # Calculate benchmark metrics with safety check
+            benchmark_metrics = {}
+            if self.benchmark_returns is not None:
+                benchmark_metrics = self._calculate_benchmark_metrics()
             
-            return [''] * len(row)
-        
-        styled_df = df.style.apply(highlight_better, axis=1)
-        
-        # 주피터 노트북에서 표시
-        display(HTML("<h3>전략 vs 벤치마크 성과 비교</h3>"))
-        display(styled_df)
+            # Create comparison data
+            comparison_data = {
+                "Metric": [
+                    "Total Return (%)",
+                    "Annual Return (%)", 
+                    "Volatility (%)",
+                    "Sharpe Ratio",
+                    "Calmar Ratio",
+                    "Sortino Ratio",
+                    "Max Drawdown (%)",
+                    "Beta",
+                    "Alpha",
+                    "Total Trades",
+                    "Win Rate (%)",
+                    "Profit Factor",
+                    # "Avg Holding Period (days)",
+                    # "Max Consecutive Wins",
+                    # "Max Consecutive Losses"
+                ],
+                "Strategy": [
+                    f"{self.total_return_pct:.2f}",
+                    f"{self.annual_return_pct:.2f}",
+                    f"{self.volatility_pct:.2f}",
+                    f"{self.sharpe_ratio:.2f}",
+                    f"{self._calculate_calmar_ratio():.2f}",
+                    f"{self._calculate_sortino_ratio():.2f}",
+                    f"{self.max_drawdown_pct:.2f}",
+                    f"{self._calculate_beta():.2f}",
+                    f"{self._calculate_alpha():.2f}",
+                    f"{self.total_trades}",
+                    f"{self.win_rate_pct:.1f}",
+                    f"{self.profit_factor:.2f}",
+                    # f"{self._calculate_avg_holding_period():.1f}",
+                    # f"{self._calculate_max_consecutive_wins()}",
+                    # f"{self._calculate_max_consecutive_losses()}"
+                ]
+            }
+            
+            # Add benchmark data only if successfully calculated
+            if benchmark_metrics:
+                comparison_data[benchmark_name] = [
+                    f"{benchmark_metrics.get('total_return_pct', 0):.2f}",
+                    f"{benchmark_metrics.get('annual_return_pct', 0):.2f}",
+                    f"{benchmark_metrics.get('volatility_pct', 0):.2f}",
+                    f"{benchmark_metrics.get('sharpe_ratio', 0):.2f}",
+                    f"{benchmark_metrics.get('calmar_ratio', 0):.2f}",
+                    f"{benchmark_metrics.get('sortino_ratio', 0):.2f}",
+                    f"{benchmark_metrics.get('max_drawdown_pct', 0):.2f}",
+                    "1.00",  # Benchmark beta is always 1
+                    "0.00",  # Benchmark alpha is always 0
+                    "-", "-", "-",
+                    # "-", "-", "-"  # Trade-related metrics not applicable (6개)
+                ]
+            else:
+                print("⚠️ 벤치마크 데이터가 없거나 계산에 실패했습니다. 전략 성과만 표시합니다.")
+            
+            # Create and display DataFrame
+            df = pd.DataFrame(comparison_data)
+            
+            # Styling with better text contrast - only if benchmark data exists
+            if benchmark_name in comparison_data:
+                def highlight_better(row):
+                    if row.name < 9:  # Performance metrics
+                        try:
+                            strategy_val = float(row['Strategy'].replace('%', ''))
+                            if len(row) > 2:  # If benchmark data exists
+                                benchmark_val = float(row.iloc[2].replace('%', ''))
+                                
+                                # Color based on better value with high contrast text
+                                if row.name in [2, 6]:  # 변동성, Max drawdown (lower is better)
+                                    if strategy_val < benchmark_val:
+                                        return ['', 
+                                               'background-color: #d4edda; color: #155724; font-weight: bold',  # Strategy better
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold']  # Benchmark worse
+                                    else:
+                                        return ['', 
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold',  # Strategy worse
+                                               'background-color: #d4edda; color: #155724; font-weight: bold']  # Benchmark better
+                                elif row.name in [7]: # 베타는 -0.5 ~ 0.5 어느정도 시장 중립이라 생각
+                                    if strategy_val > -0.5 and strategy_val < 0.5:
+                                        return ['', 
+                                               'background-color: #d4edda; color: #155724; font-weight: bold',  # Strategy better
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold']  # Benchmark worse
+                                    else:
+                                        return ['', 
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold',  # Strategy worse
+                                               'background-color: #d4edda; color: #155724; font-weight: bold']  # Benchmark better
+                                else:  # Other metrics (higher is better)
+                                    if strategy_val > benchmark_val:
+                                        return ['', 
+                                               'background-color: #d4edda; color: #155724; font-weight: bold',  # Strategy better
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold']  # Benchmark worse
+                                    else:
+                                        return ['', 
+                                               'background-color: #f8d7da; color: #721c24; font-weight: bold',  # Strategy worse
+                                               'background-color: #d4edda; color: #155724; font-weight: bold']  # Benchmark better
+                        except Exception:
+                            pass
+                    
+                    return [''] * len(row)
+                
+                styled_df = df.style.apply(highlight_better, axis=1)
+            else:
+                styled_df = df.style
+            
+            # Display in Jupyter notebook
+            display(HTML("<h3>📊 전략 성과 비교표</h3>"))
+            display(styled_df)
+            
+        except Exception as e:
+            print(f"❌ 성과 비교표 생성 중 오류 발생: {e}")
+            print("기본 성과 요약을 대신 출력합니다:")
+            self.print_summary()
     
     def _check_visualization_data(self) -> bool:
         """시각화에 필요한 데이터가 있는지 확인"""
-        if not self.config.visualization_mode:
-            print("시각화 기능을 사용하려면 백테스팅 시 visualization_mode=True로 설정하세요.")
+        if not self.config.save_portfolio_history:
+            print("🚨 시각화 기능을 사용하려면 백테스팅 시 save_portfolio_history=True로 설정하세요.")
+            print("📊 상세 분석과 시각화를 위해서는 포트폴리오 히스토리 데이터가 필요합니다.")
+            print("💡 예시: BacktestConfig(..., save_portfolio_history=True)")
             return False
         
         if self.equity_curve is None:
-            print("equity_curve 데이터가 없습니다.")
+            print("⚠️ equity_curve 데이터가 없습니다.")
+            print("포지션 기반 평가를 위한 시장 데이터가 부족할 수 있습니다.")
             return False
         
         return True
     
     def _calculate_benchmark_metrics(self) -> Dict[str, float]:
-        """벤치마크 성과 지표 계산"""
+        """벤치마크 성과 지표 계산 - 안전성 강화"""
         if self.benchmark_returns is None:
             return {}
         
-        returns = self.benchmark_returns["return"].to_numpy()
-        
-        total_return = (1 + returns).prod() - 1
-        days = len(returns)
-        years = days / 252
-        annual_return = (1 + total_return) ** (1/years) - 1
-        volatility = returns.std() * np.sqrt(252)
-        sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-        
-        # 드로다운 계산
-        cumulative = (1 + returns).cumprod()
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = (cumulative - running_max) / running_max
-        max_drawdown = drawdown.min()
-        
-        # 소르티노 비율 계산
-        negative_returns = returns[returns < 0]
-        downside_std = negative_returns.std() * np.sqrt(252) if len(negative_returns) > 0 else 0
-        sortino_ratio = annual_return / downside_std if downside_std > 0 else 0
-        
-        # 칼마 비율 계산
-        calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else 0
-        
-        return {
-            'total_return_pct': total_return * 100,
-            'annual_return_pct': annual_return * 100,
-            'volatility_pct': volatility * 100,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown_pct': max_drawdown * 100,
-            'sortino_ratio': sortino_ratio,
-            'calmar_ratio': calmar_ratio
-        }
+        try:
+            returns = self.benchmark_returns["return"].to_numpy()
+            
+            # NaN 값 제거
+            valid_returns = returns[~np.isnan(returns)]
+            if len(valid_returns) == 0:
+                return {}
+            
+            # 총 수익률 계산 (복리)
+            total_return = (1 + valid_returns).prod() - 1
+            
+            # 실제 백테스팅 기간을 사용하여 연간 수익률 계산
+            actual_years = self.config.duration_days / 365.25
+            
+            # 연간 수익률: 실제 백테스팅 기간 기준으로 정확히 계산
+            if actual_years > 0 and total_return > -1:  # -100% 미만 손실 방지
+                annual_return = (1 + total_return) ** (1/actual_years) - 1
+            else:
+                annual_return = 0
+            
+            # 변동성 계산
+            volatility = valid_returns.std() * np.sqrt(365.25) if len(valid_returns) > 1 else 0
+            
+            # 샤프 비율 (무위험 수익률 0% 가정)
+            risk_free_rate = 0.00
+            sharpe_ratio = (annual_return - risk_free_rate) / volatility if volatility > 0 else 0
+            
+            # 드로다운 계산 개선
+            cumulative = (1 + valid_returns).cumprod()
+            running_max = np.maximum.accumulate(cumulative)
+            drawdown = (cumulative - running_max) / running_max
+            max_drawdown = drawdown.min()  # 이미 음수값
+            
+            # 소르티노 비율 계산
+            negative_returns = valid_returns[valid_returns < 0]
+            downside_std = negative_returns.std() * np.sqrt(365.25) if len(negative_returns) > 0 else 0
+            sortino_ratio = (annual_return - risk_free_rate) / downside_std if downside_std > 0 else 0
+            
+            # 칼마 비율 계산 (연간수익률 / |최대낙폭|)
+            calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown != 0 else 0
+            
+            return {
+                'total_return_pct': total_return * 100,
+                'annual_return_pct': annual_return * 100,
+                'volatility_pct': volatility * 100,
+                'sharpe_ratio': sharpe_ratio,
+                'max_drawdown_pct': abs(max_drawdown) * 100,  # 절댓값으로 양수 표시
+                'sortino_ratio': sortino_ratio,
+                'calmar_ratio': calmar_ratio
+            }
+            
+        except (ValueError, ZeroDivisionError, FloatingPointError) as e:
+            print(f"⚠️ 벤치마크 지표 계산 중 오류 발생: {e}")
+            return {}
     
     def _calculate_calmar_ratio(self) -> float:
         """칼마 비율 계산"""
@@ -589,22 +647,43 @@ class BacktestResult:
         if len(negative_returns) == 0:
             return float('inf')
         
-        downside_std = negative_returns.std() * np.sqrt(252)
+        downside_std = negative_returns.std() * np.sqrt(365.25)
         return self.annual_return / downside_std if downside_std > 0 else 0
     
     def _calculate_beta(self) -> float:
-        """베타 계산"""
+        """베타 계산 - 데이터 안전성 강화"""
         if self.daily_returns is None or self.benchmark_returns is None:
             return 0
         
-        strategy_returns = self.daily_returns["return"].to_numpy()
-        benchmark_returns = self.benchmark_returns["return"].to_numpy()
-        
-        if len(strategy_returns) != len(benchmark_returns):
-            return 0
-        
-        # division by zero 방지 강화
         try:
+            strategy_returns = self.daily_returns["return"].to_numpy()
+            benchmark_returns = self.benchmark_returns["return"].to_numpy()
+            
+            # 배열 유효성 검사
+            if len(strategy_returns) == 0 or len(benchmark_returns) == 0:
+                return 0
+            
+            # 길이 다를 경우 짧은 쪽에 맞춤
+            min_length = min(len(strategy_returns), len(benchmark_returns))
+            if min_length == 0:
+                return 0
+                
+            strategy_returns = strategy_returns[:min_length]
+            benchmark_returns = benchmark_returns[:min_length]
+            
+            # NaN 값 제거
+            valid_mask = ~(np.isnan(strategy_returns) | np.isnan(benchmark_returns))
+            if not np.any(valid_mask):
+                return 0
+            
+            strategy_returns = strategy_returns[valid_mask]
+            benchmark_returns = benchmark_returns[valid_mask]
+            
+            # 최소 데이터 점수 확인
+            if len(strategy_returns) < 2:
+                return 0
+            
+            # 공분산 및 분산 계산
             covariance = np.cov(strategy_returns, benchmark_returns)[0, 1]
             benchmark_variance = np.var(benchmark_returns)
             
@@ -612,18 +691,47 @@ class BacktestResult:
                 return covariance / benchmark_variance
             else:
                 return 0
-        except (ZeroDivisionError, FloatingPointError):
+                
+        except (ZeroDivisionError, FloatingPointError, IndexError, ValueError) as e:
+            print(f"⚠️ Beta 계산 중 오류 발생: {e}")
             return 0
     
     def _calculate_alpha(self) -> float:
-        """알파 계산"""
-        if self.benchmark_returns is None:
+        """알파 계산 (CAPM 모델 기반) - 안전성 강화"""
+        if self.benchmark_returns is None or self.daily_returns is None:
             return 0
         
-        benchmark_return = self.benchmark_returns["return"].mean() * 252
-        beta = self._calculate_beta()
-        
-        return self.annual_return - beta * benchmark_return
+        try:
+            # 벤치마크 연간 수익률 계산 (실제 백테스팅 기간 기준)
+            benchmark_returns = self.benchmark_returns["return"].to_numpy()
+            
+            # NaN 값 제거
+            valid_returns = benchmark_returns[~np.isnan(benchmark_returns)]
+            if len(valid_returns) == 0:
+                return 0
+            
+            total_benchmark_return = (1 + valid_returns).prod() - 1
+            actual_years = self.config.duration_days / 365.25
+            
+            if actual_years > 0 and total_benchmark_return > -1:
+                benchmark_annual_return = (1 + total_benchmark_return) ** (1/actual_years) - 1
+            else:
+                benchmark_annual_return = 0
+            
+            # 베타 계산
+            beta = self._calculate_beta()
+            
+            # 무위험 수익률 (0% 가정)
+            risk_free_rate = 0.00
+            
+            # 알파 = 전략수익률 - [무위험수익률 + 베타 × (벤치마크수익률 - 무위험수익률)]
+            alpha = self.annual_return - (risk_free_rate + beta * (benchmark_annual_return - risk_free_rate))
+            
+            return alpha
+            
+        except (ZeroDivisionError, FloatingPointError, ValueError) as e:
+            print(f"⚠️ Alpha 계산 중 오류 발생: {e}")
+            return 0
     
     def _calculate_avg_holding_period(self) -> float:
         """평균 보유 기간 계산"""
@@ -753,30 +861,32 @@ class BacktestResult:
         return result
     
     def get_summary(self) -> Dict[str, Any]:
-        """요약 정보 반환"""
+        """Return summary information"""
         return {
-            "기간": f"{self.config.start_date.date()} ~ {self.config.end_date.date()}",
-            "초기자본": f"{self.config.initial_cash:,.0f}",
-            "최종자본": f"{self.final_equity:,.0f}",
-            "총수익률": f"{self.total_return_pct:.2f}%",
-            "연간수익률": f"{self.annual_return_pct:.2f}%",
-            "변동성": f"{self.volatility_pct:.2f}%",
-            "샤프비율": f"{self.sharpe_ratio:.2f}",
-            "최대낙폭": f"{self.max_drawdown_pct:.2f}%",
-            "총거래수": self.total_trades,
-            "승률": f"{self.win_rate_pct:.1f}%",
-            "수익인수": f"{self.profit_factor:.2f}",
-            "실행시간": f"{self.duration:.2f}초"
+            "Period": f"{self.config.start_date.date()} ~ {self.config.end_date.date()}",
+            "Initial Capital": f"${self.config.initial_cash:,.0f}",
+            "Final Equity": f"${self.final_equity:,.0f}",
+            "Total Return": f"{self.total_return_pct:.2f}%",
+            "Annual Return": f"{self.annual_return_pct:.2f}%",
+            "Volatility": f"{self.volatility_pct:.2f}%",
+            "Sharpe Ratio": f"{self.sharpe_ratio:.2f}",
+            "Calmar Ratio": f"{self._calculate_calmar_ratio():.2f}",
+            "Sortino Ratio": f"{self._calculate_sortino_ratio():.2f}",
+            "Max Drawdown": f"{self.max_drawdown_pct:.2f}%",
+            "Total Trades": self.total_trades,
+            "Win Rate": f"{self.win_rate_pct:.1f}%",
+            "Profit Factor": f"{self.profit_factor:.2f}",
+            "Execution Time": f"{self.duration:.2f}s"
         }
     
     def print_summary(self) -> None:
-        """요약 정보 출력"""
-        print("=" * 50)
-        print("백테스팅 결과 요약")
-        print("=" * 50)
+        """Print backtest summary"""
+        print("=" * 60)
+        print("                 BACKTEST RESULTS SUMMARY")
+        print("=" * 60)
         
         summary = self.get_summary()
         for key, value in summary.items():
-            print(f"{key:12}: {value}")
+            print(f"{key:16}: {value}")
         
-        print("=" * 50) 
+        print("=" * 60) 

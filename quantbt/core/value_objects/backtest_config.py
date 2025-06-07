@@ -31,11 +31,7 @@ class BacktestConfig:
     
     # 실행 설정
     benchmark_symbol: Optional[str] = None
-    save_trades: bool = True
-    save_portfolio_history: bool = True
-    
-    # 시각화 설정
-    visualization_mode: bool = False  # True일 때 상세 데이터 수집 (메모리 사용량 증가)
+    save_portfolio_history: bool = False  # True일 때 상세 데이터 수집 (시각화 및 분석용)
     
     # 추가 설정
     metadata: Optional[Dict[str, Any]] = None
@@ -138,9 +134,7 @@ class BacktestConfig:
             "commission_rate": self.commission_rate,
             "slippage_rate": self.slippage_rate,
             "benchmark_symbol": self.benchmark_symbol,
-            "save_trades": self.save_trades,
             "save_portfolio_history": self.save_portfolio_history,
-            "visualization_mode": self.visualization_mode,
             "metadata": self.metadata or {},
             "is_multi_timeframe": self.is_multi_timeframe,
             "base_timeframe": self.base_timeframe,
@@ -163,9 +157,7 @@ class BacktestConfig:
             commission_rate=data.get("commission_rate", 0.001),
             slippage_rate=data.get("slippage_rate", 0.0001),
             benchmark_symbol=data.get("benchmark_symbol"),
-            save_trades=data.get("save_trades", True),
-            save_portfolio_history=data.get("save_portfolio_history", True),
-            visualization_mode=data.get("visualization_mode", False),
+            save_portfolio_history=data.get("save_portfolio_history", False),
             metadata=data.get("metadata")
         )
     
