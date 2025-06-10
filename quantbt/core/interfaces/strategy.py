@@ -14,6 +14,7 @@ from ..entities.order import Order
 from ..entities.trade import Trade
 
 
+
 class BacktestContext:
     """백테스팅 컨텍스트"""
     
@@ -104,10 +105,41 @@ class StrategyBase(ABC):
         self.context = context
         self.reset_state()
     
-    @abstractmethod
     def generate_signals(self, data: MarketDataBatch) -> List[Order]:
-        """신호 생성 - 서브클래스에서 구현"""
-        pass
+        """신호 생성 - 기본 구현 (Dict Native 자동 변환)
+        
+        서브클래스에서 generate_signals_dict() 구현 시 자동으로 호출됨
+        """
+        # 서브클래스에서 generate_signals_dict() 구현했는지 확인
+        # 기본 구현이 아닌 경우 Dict 방식 우선 사용
+        if hasattr(self, 'generate_signals_dict') and \
+           self.__class__.generate_signals_dict != TradingStrategy.generate_signals_dict:
+            # 첫 번째 심볼의 데이터로 Dict Native 방식 호출
+            for symbol in data.symbols:
+                current_data = self._convert_batch_to_dict_basic(data, symbol)
+                if current_data:
+                    return self.generate_signals_dict(current_data)
+        
+        # 기본 동작: 빈 주문 리스트 반환
+        return []
+    
+    def _convert_batch_to_dict_basic(self, data: MarketDataBatch, symbol: str) -> Optional[Dict[str, Any]]:
+        """MarketDataBatch에서 특정 심볼의 최신 데이터를 Dict로 변환 (기본 버전)"""
+        try:
+            latest_data = data.get_latest(symbol)
+            if latest_data:
+                return {
+                    'symbol': symbol,
+                    'timestamp': latest_data.timestamp,
+                    'open': latest_data.open,
+                    'high': latest_data.high,
+                    'low': latest_data.low,
+                    'close': latest_data.close,
+                    'volume': latest_data.volume
+                }
+        except:
+            pass
+        return None
     
     def on_data(self, data: MarketDataBatch) -> List[Order]:
         """데이터 처리"""
@@ -211,7 +243,12 @@ class StrategyBase(ABC):
 
 
 class TradingStrategy(StrategyBase):
-    """일반적인 트레이딩 전략 기본 클래스"""
+    """트레이딩 전략 클래스
+    
+    특징:
+    - 지표 계산: Polars 벡터연산
+    - 신호 생성: Dict Native 방식
+    """
     
     def __init__(
         self, 
@@ -223,7 +260,32 @@ class TradingStrategy(StrategyBase):
         super().__init__(name, config)
         self.position_size_pct = position_size_pct
         self.max_positions = max_positions
-        
+        self._broker = None
+        self._legacy_warning_shown = False
+    
+    # === 1. 브로커 연결 ===
+    def set_broker(self, broker) -> None:
+        """브로커 설정"""
+        self._broker = broker
+    
+    # === 2. 포지션 관리 ===
+    def get_current_positions(self) -> Dict[str, float]:
+        """현재 포지션 조회"""
+        if self._broker:
+            portfolio = self._broker.get_portfolio()
+            positions = {}
+            for symbol, position in portfolio.positions.items():
+                if hasattr(position, 'quantity') and position.quantity != 0:
+                    positions[symbol] = position.quantity
+            return positions
+        return {}
+    
+    def get_portfolio_value(self) -> float:
+        """포트폴리오 가치 조회"""
+        if self._broker:
+            return self._broker.get_portfolio().equity
+        return self.get_config_value("initial_cash", 100000.0)
+    
     def calculate_position_size(
         self, 
         symbol: str, 
@@ -234,314 +296,153 @@ class TradingStrategy(StrategyBase):
         target_value = portfolio_value * self.position_size_pct
         return target_value / price if price > 0 else 0.0
     
-    def get_portfolio_value(self) -> float:
-        """포트폴리오 가치 조회"""
-        # 브로커가 연결되어 있으면 실제 값 조회
-        if hasattr(self, '_broker') and self._broker:
-            return self._broker.get_portfolio().equity
-        # 아니면 컨텍스트의 초기 자본 사용
-        elif self.context:
-            return self.context.initial_cash
-        # 최후의 수단으로 설정값 사용
-        return self.get_config_value("initial_cash", 100000.0)
+    def generate_signals_dict(self, current_data: Dict[str, Any], 
+                            historical_data: Optional[List[Dict[str, Any]]] = None) -> List[Order]:
+        """Dict 기반 신호 생성 (서브클래스에서 구현)
+        
+        Args:
+            current_data: 현재 캔들 데이터 (지표 포함)
+            historical_data: 과거 데이터 (옵션)
+            
+        Returns:
+            생성된 주문 리스트
+        """
+        # 기본 구현: 빈 주문 리스트 반환
+        # 서브클래스에서 이 메서드를 구현하면 최고 성능으로 작동
+        return []
     
-    def get_current_positions(self) -> Dict[str, float]:
-        """현재 포지션 조회"""
-        # 브로커가 연결되어 있으면 실제 포지션 조회
-        if hasattr(self, '_broker') and self._broker:
-            portfolio = self._broker.get_portfolio()
-            positions = {}
-            for symbol, position in portfolio.active_positions.items():
-                positions[symbol] = position.quantity
-            return positions
-        # 아니면 상태에서 조회
-        return self.state.get("positions", {})
     
-    def set_broker(self, broker) -> None:
-        """브로커 연결"""
-        self._broker = broker
+    def _convert_batch_to_dict(self, data: MarketDataBatch, symbol: str) -> Optional[Dict[str, Any]]:
+        """MarketDataBatch에서 특정 심볼의 최신 데이터를 Dict로 변환"""
+        try:
+            latest_data = data.get_latest(symbol)
+            if latest_data:
+                result = {
+                    'symbol': symbol,
+                    'timestamp': latest_data.timestamp,
+                    'open': latest_data.open,
+                    'high': latest_data.high,
+                    'low': latest_data.low,
+                    'close': latest_data.close,
+                    'volume': latest_data.volume
+                }
+                
+                # 지표 데이터 추가 (만약 있다면)
+                if hasattr(latest_data, '_additional_fields'):
+                    result.update(latest_data._additional_fields)
+                
+                # 지표 컬럼들 추가 (만약 있다면)
+                for col in self.indicator_columns:
+                    if hasattr(latest_data, col):
+                        result[col] = getattr(latest_data, col)
+                
+                return result
+        except Exception as e:
+            print(f"Warning: Failed to convert batch to dict for {symbol}: {e}")
+        return None
     
+    def calculate_sma_dict(self, prices: List[float], window: int) -> List[float]:
+        """Dict 기반 단순이동평균 계산"""
+        sma_values = []
+        for i in range(len(prices)):
+            if i < window - 1:
+                sma_values.append(None)
+            else:
+                window_prices = prices[i - window + 1:i + 1]
+                sma = sum(window_prices) / len(window_prices)
+                sma_values.append(sma)
+        return sma_values
+    
+    def calculate_ema_dict(self, prices: List[float], span: int) -> List[float]:
+        """Dict 기반 지수이동평균 계산"""
+        if not prices:
+            return []
+        
+        alpha = 2.0 / (span + 1)
+        ema_values = [None] * len(prices)
+        
+        # 첫 번째 유효한 값으로 초기화
+        first_idx = 0
+        while first_idx < len(prices) and prices[first_idx] is None:
+            first_idx += 1
+        
+        if first_idx >= len(prices):
+            return ema_values
+        
+        ema_values[first_idx] = prices[first_idx]
+        
+        # EMA 계산
+        for i in range(first_idx + 1, len(prices)):
+            if prices[i] is not None:
+                prev_ema = ema_values[i-1]
+                if prev_ema is not None:
+                    ema_values[i] = alpha * prices[i] + (1 - alpha) * prev_ema
+                else:
+                    ema_values[i] = prices[i]
+        
+        return ema_values
+    
+    def calculate_rsi_dict(self, prices: List[float], period: int = 14) -> List[float]:
+        """Dict 기반 RSI 계산"""
+        if len(prices) < period + 1:
+            return [None] * len(prices)
+        
+        # 가격 변화 계산
+        deltas = []
+        for i in range(1, len(prices)):
+            if prices[i] is not None and prices[i-1] is not None:
+                deltas.append(prices[i] - prices[i-1])
+            else:
+                deltas.append(None)
+        
+        # 상승/하락 분리
+        gains = [max(d, 0) if d is not None else None for d in deltas]
+        losses = [-min(d, 0) if d is not None else None for d in deltas]
+        
+        # 평균 계산
+        avg_gains = self.calculate_sma_dict(gains, period)
+        avg_losses = self.calculate_sma_dict(losses, period)
+        
+        # RSI 계산
+        rsi_values = [None] * (len(prices))
+        for i in range(len(avg_gains)):
+            if avg_gains[i] is not None and avg_losses[i] is not None:
+                if avg_losses[i] == 0:
+                    rsi_values[i + 1] = 100.0
+                else:
+                    rs = avg_gains[i] / avg_losses[i]
+                    rsi_values[i + 1] = 100.0 - (100.0 / (1.0 + rs))
+        
+        return rsi_values
+    
+    # === 6. 주문 검증 강화 ===
     def validate_order(self, order: Order, data: MarketDataBatch) -> bool:
-        """트레이딩 전략용 주문 검증"""
+        """주문 유효성 검증"""
+        # 기본 검증
         if not super().validate_order(order, data):
             return False
         
-        # 최대 포지션 수 체크
-        current_positions = len(self.get_current_positions())
-        if current_positions >= self.max_positions and self.is_new_position_order(order):
-            return False
+        # 포지션 제한 검증
+        current_positions = self.get_current_positions()
+        
+        # 새로운 포지션 주문인 경우
+        if self.is_new_position_order(order):
+            if len(current_positions) >= self.max_positions:
+                return False
         
         return True
     
     def is_new_position_order(self, order: Order) -> bool:
-        """새로운 포지션 생성 주문인지 확인"""
-        positions = self.get_current_positions()
-        return order.symbol not in positions or positions[order.symbol] == 0
-
-
-class MultiTimeframeTradingStrategy(TradingStrategy):
-    """멀티타임프레임 지원 트레이딩 전략 기본 클래스"""
-    
-    def __init__(
-        self,
-        name: str,
-        timeframes: List[str],
-        config: Optional[Dict[str, Any]] = None,
-        position_size_pct: float = 0.1,
-        max_positions: int = 10,
-        primary_timeframe: Optional[str] = None
-    ):
-        """멀티타임프레임 전략 초기화
+        """새로운 포지션을 여는 주문인지 확인"""
+        current_positions = self.get_current_positions()
+        symbol_position = current_positions.get(order.symbol, 0.0)
         
-        Args:
-            name: 전략명
-            timeframes: 사용할 타임프레임 리스트 (예: ["1m", "5m", "1h"])
-            config: 설정 딕셔너리
-            position_size_pct: 포지션 크기 비율
-            max_positions: 최대 포지션 수
-            primary_timeframe: 주요 타임프레임 (None이면 가장 작은 것 자동 선택)
-        """
-        super().__init__(name, config, position_size_pct, max_positions)
+        # 매수 주문이고 현재 포지션이 없는 경우
+        if order.side.name == "BUY" and symbol_position <= 0:
+            return True
         
-        self.timeframes = timeframes or ["1m"]
-        self.primary_timeframe = primary_timeframe
+        # 매도 주문이고 현재 숏 포지션이 없는 경우 (공매도)
+        if order.side.name == "SELL" and symbol_position >= 0:
+            return True
         
-        # 타임프레임별 지표 컬럼 추적
-        self.timeframe_indicators: Dict[str, List[str]] = {}
-        
-        # 유효성 검증
-        from ..utils.timeframe import TimeframeUtils
-        valid_timeframes = TimeframeUtils.filter_valid_timeframes(self.timeframes)
-        if not valid_timeframes:
-            raise ValueError(f"No valid timeframes provided: {self.timeframes}")
-        
-        self.timeframes = valid_timeframes
-        
-        # primary_timeframe 설정
-        if self.primary_timeframe is None or self.primary_timeframe not in self.timeframes:
-            # 가장 작은 타임프레임을 primary로 설정
-            timeframe_minutes = [(tf, TimeframeUtils.get_timeframe_minutes(tf)) for tf in self.timeframes]
-            self.primary_timeframe = min(timeframe_minutes, key=lambda x: x[1])[0]
-    
-    def precompute_indicators_multi_timeframe(
-        self, 
-        timeframe_data: Dict[str, pl.DataFrame]
-    ) -> Dict[str, pl.DataFrame]:
-        """멀티타임프레임 지표 사전 계산
-        
-        Args:
-            timeframe_data: 타임프레임별 원시 데이터 딕셔너리
-            
-        Returns:
-            타임프레임별 지표가 추가된 데이터 딕셔너리
-        """
-        enriched_data = {}
-        
-        for timeframe, data in timeframe_data.items():
-            if timeframe in self.timeframes:
-                # 해당 타임프레임에 대한 지표 계산
-                enriched_df = self._compute_indicators_for_timeframe(data, timeframe)
-                enriched_data[timeframe] = enriched_df
-                
-                # 지표 컬럼 추적
-                base_columns = {"timestamp", "symbol", "open", "high", "low", "close", "volume"}
-                indicator_cols = [col for col in enriched_df.columns if col not in base_columns]
-                self.timeframe_indicators[timeframe] = indicator_cols
-        
-        return enriched_data
-    
-    def _compute_indicators_for_timeframe(
-        self, 
-        data: pl.DataFrame, 
-        timeframe: str
-    ) -> pl.DataFrame:
-        """특정 타임프레임에 대한 지표 계산
-        
-        Args:
-            data: 해당 타임프레임의 원시 데이터
-            timeframe: 타임프레임
-            
-        Returns:
-            지표가 추가된 데이터프레임
-        """
-        # 심볼별로 그룹화하여 지표 계산
-        enriched_data = data.group_by("symbol").map_groups(
-            lambda group: self._compute_indicators_for_symbol_and_timeframe(group, timeframe)
-        )
-        
-        # 시간순 정렬
-        return enriched_data.sort(["timestamp", "symbol"])
-    
-    def _compute_indicators_for_symbol_and_timeframe(
-        self, 
-        symbol_data: pl.DataFrame, 
-        timeframe: str
-    ) -> pl.DataFrame:
-        """심볼별, 타임프레임별 지표 계산 - 서브클래스에서 구현
-        
-        Args:
-            symbol_data: 특정 심볼의 데이터
-            timeframe: 타임프레임
-            
-        Returns:
-            지표가 추가된 데이터프레임
-        """
-        # 기본 구현: 기존 단일 타임프레임 메서드 호출
-        return self._compute_indicators_for_symbol(symbol_data)
-    
-    def generate_signals_multi_timeframe(
-        self, 
-        multi_data: MultiTimeframeDataBatch
-    ) -> List[Order]:
-        """멀티타임프레임 데이터 기반 신호 생성 - 서브클래스에서 구현
-        
-        Args:
-            multi_data: 멀티타임프레임 데이터 배치
-            
-        Returns:
-            주문 리스트
-        """
-        # 기본 구현: primary 타임프레임으로 단일 타임프레임 신호 생성
-        primary_batch = multi_data.get_primary_batch()
-        if primary_batch:
-            return self.generate_signals(primary_batch)
-        return []
-    
-    def on_data_multi_timeframe(self, multi_data: MultiTimeframeDataBatch) -> List[Order]:
-        """멀티타임프레임 데이터 처리
-        
-        Args:
-            multi_data: 멀티타임프레임 데이터 배치
-            
-        Returns:
-            주문 리스트
-        """
-        # 상태 업데이트
-        if self.context:
-            start_time, end_time = multi_data.timestamp_range
-            self.context.current_time = end_time
-        
-        # 멀티타임프레임 신호 생성
-        orders = self.generate_signals_multi_timeframe(multi_data)
-        
-        # 주문 후처리 (primary 타임프레임 배치 사용)
-        primary_batch = multi_data.get_primary_batch()
-        if primary_batch:
-            return self.post_process_orders(orders, primary_batch)
-        
-        return orders
-    
-    def on_data(self, data: Union[MarketDataBatch, MultiTimeframeDataBatch]) -> List[Order]:
-        """데이터 처리 - 단일/멀티 타임프레임 모두 지원
-        
-        Args:
-            data: 시장 데이터 배치
-            
-        Returns:
-            주문 리스트
-        """
-        if isinstance(data, MultiTimeframeDataBatch):
-            return self.on_data_multi_timeframe(data)
-        else:
-            return super().on_data(data)
-    
-    def get_timeframe_price(
-        self, 
-        symbol: str, 
-        timeframe: str, 
-        price_type: str = "close",
-        data: Optional[MultiTimeframeDataBatch] = None
-    ) -> Optional[float]:
-        """특정 타임프레임의 가격 조회
-        
-        Args:
-            symbol: 심볼명
-            timeframe: 타임프레임
-            price_type: 가격 유형
-            data: 멀티타임프레임 데이터 (None이면 현재 상태에서 조회)
-            
-        Returns:
-            가격 또는 None
-        """
-        if data:
-            return data.get_timeframe_price(timeframe, symbol, price_type)
-        # 현재 상태에서 조회하는 로직은 추후 구현
-        return None
-    
-    def get_timeframe_indicator(
-        self,
-        symbol: str,
-        timeframe: str, 
-        indicator: str,
-        data: Optional[MultiTimeframeDataBatch] = None
-    ) -> Optional[float]:
-        """특정 타임프레임의 지표값 조회
-        
-        Args:
-            symbol: 심볼명
-            timeframe: 타임프레임
-            indicator: 지표명
-            data: 멀티타임프레임 데이터 (None이면 현재 상태에서 조회)
-            
-        Returns:
-            지표값 또는 None
-        """
-        if data:
-            return data.get_timeframe_indicator(timeframe, indicator, symbol)
-        # 현재 상태에서 조회하는 로직은 추후 구현
-        return None
-    
-    def get_cross_timeframe_signal(
-        self,
-        symbol: str,
-        long_tf: str,
-        short_tf: str,
-        indicator: str,
-        data: Optional[MultiTimeframeDataBatch] = None
-    ) -> Optional[Dict[str, float]]:
-        """크로스 타임프레임 신호 비교
-        
-        Args:
-            symbol: 심볼명
-            long_tf: 장기 타임프레임
-            short_tf: 단기 타임프레임
-            indicator: 지표명
-            data: 멀티타임프레임 데이터
-            
-        Returns:
-            신호 딕셔너리 또는 None
-        """
-        if data:
-            return data.get_cross_timeframe_signal(symbol, long_tf, short_tf, indicator)
-        return None
-    
-    def get_indicator_summary(
-        self,
-        symbol: str,
-        indicator: str,
-        data: Optional[MultiTimeframeDataBatch] = None
-    ) -> Dict[str, Optional[float]]:
-        """모든 타임프레임에서 지표 요약
-        
-        Args:
-            symbol: 심볼명
-            indicator: 지표명
-            data: 멀티타임프레임 데이터
-            
-        Returns:
-            타임프레임별 지표값 딕셔너리
-        """
-        if data:
-            return data.get_indicator_summary(indicator, symbol)
-        return {}
-    
-    @property
-    def supported_timeframes(self) -> List[str]:
-        """지원되는 타임프레임 목록"""
-        return self.timeframes.copy()
-    
-    def log_debug(self, message: str, timeframe: Optional[str] = None, **kwargs: Any) -> None:
-        """디버그 로그 (타임프레임 정보 포함)"""
-        timestamp = self.context.current_time if self.context else datetime.now()
-        tf_info = f"[{timeframe}]" if timeframe else ""
-        print(f"[{timestamp}] {self.name}{tf_info}: {message}", kwargs) 
+        return False

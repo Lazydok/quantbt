@@ -120,7 +120,7 @@ class GridSearchConfig:
         }
     
     @classmethod
-    def create_basic(
+    def create(
         cls,
         strategy_class: Type,
         symbols: List[str], 
@@ -129,6 +129,14 @@ class GridSearchConfig:
         strategy_params: Dict[str, List[Any]],
         fixed_params: Optional[Dict[str, Any]] = None,
         initial_cash: float = 10_000_000,
+        max_workers: Optional[int] = None,
+        batch_size: int = 10,
+        save_top_n: int = 10,
+        min_trades: int = 10,
+        save_detailed_results: bool = False,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> "GridSearchConfig":
         """기본 그리드 서치 설정 생성"""
@@ -150,54 +158,13 @@ class GridSearchConfig:
             base_config=base_config,
             strategy_class=strategy_class,
             strategy_params=strategy_params,
-            fixed_params=fixed_params
+            fixed_params=fixed_params,
+            max_workers=max_workers,
+            batch_size=batch_size,
+            save_top_n=save_top_n,
+            min_trades=min_trades,
+            save_detailed_results=save_detailed_results,
+            name=name,
+            description=description,
+            metadata=metadata
         )
-
-
-class SMAGridSearchConfig(GridSearchConfig):
-    """SMA 전략 전용 그리드 서치 설정"""
-    
-    def _is_valid_combination(self, params: Dict[str, Any]) -> bool:
-        """SMA 전략의 유효성 검사: buy_sma <= sell_sma"""
-        buy_sma = params.get('buy_sma')
-        sell_sma = params.get('sell_sma')
-        
-        if buy_sma is not None and sell_sma is not None:
-            return buy_sma <= sell_sma
-        
-        return True
-    
-    @classmethod
-    def create_sma_config(
-        cls,
-        strategy_class: Type,
-        symbols: List[str],
-        start_date: datetime,
-        end_date: datetime,
-        buy_sma_range: List[int] = None,
-        sell_sma_range: List[int] = None,
-        initial_cash: float = 10_000_000,
-        **kwargs
-    ) -> "SMAGridSearchConfig":
-        """SMA 전략용 편의 생성자"""
-        
-        # 기본 범위 설정
-        if buy_sma_range is None:
-            buy_sma_range = [5, 10, 15, 20]
-        if sell_sma_range is None:
-            sell_sma_range = [10, 20, 30, 40]
-        
-        strategy_params = {
-            'buy_sma': buy_sma_range,
-            'sell_sma': sell_sma_range
-        }
-        
-        return cls.create_basic(
-            strategy_class=strategy_class,
-            symbols=symbols,
-            start_date=start_date,
-            end_date=end_date,
-            strategy_params=strategy_params,
-            initial_cash=initial_cash,
-            **kwargs
-        ) 

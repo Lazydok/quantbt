@@ -191,35 +191,6 @@ class DataProviderBase(ABC):
         # 데이터 후처리
         return self._post_process_data(raw_data)
     
-    async def get_data_stream(
-        self,
-        symbols: List[str],
-        start: datetime,
-        end: datetime,
-        timeframe: str = "1D"
-    ) -> AsyncIterator[MarketDataBatch]:
-        """시장 데이터 스트림"""
-        # 전체 데이터 조회
-        full_data = await self.get_data(symbols, start, end, timeframe)
-        
-        # 시간순으로 정렬
-        sorted_data = full_data.sort("timestamp")
-        
-        # 각 시점별로 배치 생성
-        unique_timestamps = sorted_data.select("timestamp").unique().sort("timestamp")
-        
-        for timestamp_row in unique_timestamps.iter_rows(named=True):
-            timestamp = timestamp_row["timestamp"]
-            
-            # 해당 시점까지의 누적 데이터
-            batch_data = sorted_data.filter(pl.col("timestamp") <= timestamp)
-            
-            yield MarketDataBatch(
-                data=batch_data,
-                symbols=symbols,
-                timeframe=timeframe
-            )
-    
     def _post_process_data(self, data: pl.DataFrame) -> pl.DataFrame:
         """데이터 후처리"""
         # 기본적인 후처리 (정렬, 중복 제거 등)
@@ -267,39 +238,3 @@ class DataProviderBase(ABC):
         )
         
         return result
-    
-    async def get_multi_timeframe_stream(
-        self,
-        symbols: List[str],
-        start: datetime,
-        end: datetime,
-        timeframes: List[str],
-        base_timeframe: str = "1m"
-    ) -> AsyncIterator:
-        """멀티타임프레임 데이터 스트림"""
-        if not MULTI_TIMEFRAME_AVAILABLE:
-            raise ImportError("MultiTimeframe components not available.")
-        
-        # 멀티타임프레임 데이터 조회
-        multi_data = await self.get_multi_timeframe_data(
-            symbols, start, end, timeframes, base_timeframe
-        )
-        
-        # 기준 타임프레임의 유니크 타임스탬프 기준으로 스트림 생성
-        base_data = multi_data[base_timeframe]
-        unique_timestamps = base_data.select("timestamp").unique().sort("timestamp")
-        
-        for timestamp_row in unique_timestamps.iter_rows(named=True):
-            timestamp = timestamp_row["timestamp"]
-            
-            # 각 타임프레임별로 해당 시점까지의 누적 데이터 생성
-            timeframe_data = {}
-            for tf, df in multi_data.items():
-                batch_data = df.filter(pl.col("timestamp") <= timestamp)
-                timeframe_data[tf] = batch_data
-            
-            # MultiTimeframeDataBatch 생성
-            yield MultiTimeframeDataBatch(
-                timeframe_data=timeframe_data,
-                symbols=symbols
-            ) 

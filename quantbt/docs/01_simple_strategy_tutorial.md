@@ -41,15 +41,16 @@ import polars as pl
 from datetime import datetime
 
 from quantbt import (
-    SimpleBacktestEngine, 
+    TradingStrategy,
+    BacktestEngine, 
+    
+    # 기본 모듈들
     SimpleBroker, 
-    TradingStrategy, 
-    MarketDataBatch, 
     BacktestConfig,
     UpbitDataProvider,
-    Order,
-    OrderSide,
-    OrderType,
+    
+    # 주문 관련
+    Order, OrderSide, OrderType,
 )
 print("✅ 모든 QuantBT 모듈이 성공적으로 가져와졌습니다!")
 ```
@@ -194,7 +195,7 @@ print(f"📈 전략: 가격 > SMA{strategy.buy_sma} 매수, 가격 < SMA{strateg
 print(f"💰 초기 자본: {config.initial_cash:,.0f}원")
 print(f"📊 수수료: {config.commission_rate:.1%} | 슬리피지: {config.slippage_rate:.1%}")
 
-result = await engine.run(config)
+result = engine.run(config)
 ```
 
 **실행 결과:**

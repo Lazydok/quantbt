@@ -17,18 +17,20 @@ from .core.entities.trade import Trade
 from .core.utils.timeframe import TimeframeUtils
 
 # 전략 기본 클래스
-from .core.interfaces.strategy import StrategyBase, TradingStrategy, MultiTimeframeTradingStrategy, BacktestContext
+from .core.interfaces.strategy import StrategyBase, TradingStrategy, BacktestContext
+
+# Dict 기반 고성능 전략 (신규 추가)
+from .core.strategies.dict_based import DictTradingStrategy
 
 # 백테스팅 설정 및 결과
 from .core.value_objects.backtest_config import BacktestConfig
 from .core.value_objects.backtest_result import BacktestResult
-from .core.value_objects.grid_search_config import GridSearchConfig, SMAGridSearchConfig
+from .core.value_objects.grid_search_config import GridSearchConfig
 from .core.value_objects.grid_search_result import GridSearchResult, GridSearchSummary
 
-# 백테스팅 엔진
+# 백테스팅 엔진 - Dict Native가 기본!
 from .core.interfaces.backtest_engine import IBacktestEngine, BacktestEngineBase
-from .infrastructure.engine.simple_engine import SimpleBacktestEngine
-from .infrastructure.engine.parallel_backtest_engine import ParallelBacktestEngine
+from .infrastructure.engine.base_engine import BacktestEngine  # 기본 엔진
 
 # 데이터 제공자
 from .infrastructure.data.csv_provider import CSVDataProvider
@@ -37,13 +39,8 @@ from .infrastructure.data.upbit_provider import UpbitDataProvider
 # 브로커
 from .infrastructure.brokers.simple_broker import SimpleBroker
 
-# 예제 전략들
-from .examples.simple_strategy import BuyAndHoldStrategy, SimpleMovingAverageCrossStrategy, RSIStrategy, RandomStrategy
-from .examples.multi_timeframe_strategy import (
-    MultiTimeframeSMAStrategy, 
-    MultiTimeframeMACDRSIStrategy, 
-    MultiTimeframeMomentumStrategy
-)
+# 샘플 전략
+from .examples.strategies.sma_dict_strategy import SimpleSMAStrategyDict
 
 __all__ = [
     # 엔티티
@@ -68,6 +65,9 @@ __all__ = [
     "MultiTimeframeTradingStrategy",
     "BacktestContext",
     
+    
+    "DictTradingStrategy",
+    
     # 백테스팅
     "BacktestConfig",
     "BacktestResult",
@@ -77,20 +77,12 @@ __all__ = [
     "GridSearchSummary",
     "IBacktestEngine",
     "BacktestEngineBase",
-    "SimpleBacktestEngine",
-    "ParallelBacktestEngine",
+    "BacktestEngine",  # 기본 엔진
     
     # 인프라스트럭처
     "CSVDataProvider",
     "UpbitDataProvider",
     "SimpleBroker",
     
-    # 예제 전략
-    "BuyAndHoldStrategy",
-    "SimpleMovingAverageCrossStrategy",
-    "RSIStrategy",
-    "RandomStrategy",
-    "MultiTimeframeSMAStrategy",
-    "MultiTimeframeMACDRSIStrategy",
-    "MultiTimeframeMomentumStrategy",
+    "SimpleSMAStrategyDict",
 ] 

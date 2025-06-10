@@ -256,7 +256,6 @@ class TimeframeUtils:
                 )
                 result[normalized_tf] = resampled_data
             except ValueError as e:
-                print(f"Warning: Failed to create {timeframe} data: {e}")
                 continue
         
         return result

@@ -7,6 +7,7 @@
 from abc import ABC, abstractmethod
 from typing import Protocol, Optional, Callable, Any
 import asyncio
+from tqdm import tqdm
 
 from .strategy import IStrategy
 from .data_provider import IDataProvider
@@ -95,7 +96,32 @@ class BacktestEngineBase(ABC):
             try:
                 callback(progress, message)
             except Exception as e:
-                print(f"Progress callback error: {e}")
+                pass  # 콜백 에러는 조용히 무시
+    
+    def create_progress_bar(self, total: int, desc: str = "Processing") -> tqdm:
+        """tqdm 진행률 바 생성
+        
+        Args:
+            total: 전체 항목 수
+            desc: 진행률 바 설명
+            
+        Returns:
+            tqdm 진행률 바 객체
+        """
+        return tqdm(total=total, desc=desc, unit="item", 
+                   bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+    
+    def update_progress_bar(self, pbar: tqdm, message: str = "") -> None:
+        """tqdm 진행률 바 업데이트 및 콜백 알림
+        
+        Args:
+            pbar: tqdm 진행률 바 객체
+            message: 추가 메시지
+        """
+        pbar.update(1)
+        if pbar.total and pbar.total > 0:
+            progress = pbar.n / pbar.total
+            self._notify_progress(progress, message or pbar.desc)
     
     def _validate_components(self) -> None:
         """컴포넌트 유효성 검증"""
@@ -108,7 +134,26 @@ class BacktestEngineBase(ABC):
     
     @abstractmethod
     async def _execute_backtest(self, config: BacktestConfig) -> BacktestResult:
-        """백테스팅 실행 - 서브클래스에서 구현"""
+        """백테스팅 실행 - 서브클래스에서 구현
+        
+        예시 사용법:
+            # 데이터 개수 확인
+            data_count = len(market_data)
+            
+            # tqdm 진행률 바 생성
+            pbar = self.create_progress_bar(data_count, "백테스팅 진행")
+            
+            try:
+                for i, data_point in enumerate(market_data):
+                    # 백테스팅 로직 수행
+                    await self._process_data_point(data_point)
+                    
+                    # 진행률 업데이트
+                    self.update_progress_bar(pbar, f"처리중... {i+1}/{data_count}")
+                    
+            finally:
+                pbar.close()
+        """
         pass
     
     async def run(self, config: BacktestConfig) -> BacktestResult:

@@ -190,7 +190,6 @@ Thumbs.db
 *.log
 
 # Data files (optional - uncomment if you don't want to track data files)
-data/
 # *.csv
 # *.json
 # *.xlsx
