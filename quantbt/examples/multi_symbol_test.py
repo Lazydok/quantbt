@@ -35,7 +35,7 @@ from quantbt import (
 )
 
 
-class SimpleSMAStrategy(TradingStrategy):
+class MultiSymbolSMAStrategy(TradingStrategy):
     """SMA 전략
     
     하이브리드 방식:
@@ -46,9 +46,9 @@ class SimpleSMAStrategy(TradingStrategy):
     매도: 가격이 SMA30 하회  
     """
     
-    def __init__(self, buy_sma: int = 15, sell_sma: int = 30):
+    def __init__(self, buy_sma: int = 15, sell_sma: int = 30, symbols: List[str] = ["KRW-BTC", "KRW-ETH"]):
         super().__init__(
-            name="SimpleSMAStrategy",
+            name="MultiSymbolSMAStrategy",
             config={
                 "buy_sma": buy_sma,
                 "sell_sma": sell_sma
@@ -58,6 +58,7 @@ class SimpleSMAStrategy(TradingStrategy):
         )
         self.buy_sma = buy_sma
         self.sell_sma = sell_sma
+        self.symbols = symbols
         
     def _compute_indicators_for_symbol(self, symbol_data):
         """심볼별 이동평균 지표 계산 (Polars 벡터 연산)"""
@@ -96,7 +97,7 @@ class SimpleSMAStrategy(TradingStrategy):
         # 매수 신호: 가격이 SMA15 상회 + 포지션 없음
         if current_price > buy_sma and symbol not in current_positions:
             portfolio_value = self.get_portfolio_value()
-            quantity = self.calculate_position_size(symbol, current_price, portfolio_value)
+            quantity = self.calculate_position_size(symbol, current_price, portfolio_value) / len(self.symbols)
             
             if quantity > 0:
                 order = Order(
@@ -129,10 +130,10 @@ upbit_provider = UpbitDataProvider()
 
 # 2. 백테스팅 설정 (Phase 7 최적화)
 config = BacktestConfig(
-    symbols=["KRW-BTC"],
+    symbols=["KRW-BTC", "KRW-ETH"],
     start_date=datetime(2024, 1, 1),
-    end_date=datetime(2024, 1, 31), 
-    timeframe="1m",  # 1시간봉 (1분봉보다 빠름)
+    end_date=datetime(2024, 12, 31), 
+    timeframe="1d", 
     initial_cash=10_000_000,  # 1천만원
     commission_rate=0.0,      # 수수료 0% (테스트용) - 실제 백테스팅에는 적절한 값 사용
     slippage_rate=0.0,         # 슬리피지 0% (테스트용) - 실제 백테스팅에는 적절한 값 사용
@@ -141,9 +142,10 @@ config = BacktestConfig(
 
 # 3. Phase 7 하이브리드 SMA 전략
 print("⚡ Phase 7 하이브리드 전략 초기화 중...")
-strategy = SimpleSMAStrategy(
+strategy = MultiSymbolSMAStrategy(
     buy_sma=15,   # 매수: 가격이 15시간 이평선 상회
-    sell_sma=30   # 매도: 가격이 30시간 이평선 하회
+    sell_sma=30,   # 매도: 가격이 30시간 이평선 하회
+    symbols=["KRW-BTC", "KRW-ETH"],
 )
 
 # 4. 브로커 설정

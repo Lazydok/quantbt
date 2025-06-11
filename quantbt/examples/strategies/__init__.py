@@ -1,9 +1,9 @@
 """
-Dict 기반 고성능 전략 예제들
+TradingStrategy 기반 전략 예제들
 """
 
-from .sma_dict_strategy import SimpleSMAStrategyDict
+from .simple_sma_strategy import SimpleSMAStrategy
 
 __all__ = [
-    "SimpleSMAStrategyDict",
+    "SimpleSMAStrategy",
 ] 

@@ -32,8 +32,7 @@ def _is_jupyter_environment() -> bool:
 from ...core.interfaces.backtest_engine import BacktestEngineBase
 from ...core.value_objects.backtest_config import BacktestConfig
 from ...core.value_objects.backtest_result import BacktestResult
-from ...core.strategies.dict_based import DictTradingStrategy
-from ...core.interfaces.strategy import TradingStrategy  # Phase 7 하이브리드 전략 지원
+from ...core.interfaces.strategy import TradingStrategy
 from ...core.entities.order import Order, OrderSide, OrderType, OrderStatus
 from ...core.entities.trade import Trade
 from ...infrastructure.brokers.simple_broker import SimpleBroker
@@ -47,20 +46,20 @@ class BacktestEngine(BacktestEngineBase):
     def __init__(self):
         """백테스팅 엔진 초기화"""
         super().__init__(name="BacktestEngine")
-        self.strategy: Optional[Union[DictTradingStrategy, TradingStrategy]] = None
+        self.strategy: Optional[TradingStrategy] = None
         self.broker: Optional[SimpleBroker] = None
         self.data_provider: Optional[UpbitDataProvider] = None
         self.pending_orders: List[Dict[str, Any]] = []
         self.filled_orders: List[Dict[str, Any]] = []
         self.failed_orders: List[Dict[str, Any]] = []
-        self.execution_mode: str = "open"  # "open" 또는 "close"
+        self.execution_mode: str = "close"  # "open" 또는 "close"
         
         # 데이터 캐시 (중복 로딩 방지)
         self._cached_market_data: Optional[pl.DataFrame] = None
         self._cached_daily_market_data: Optional[pl.DataFrame] = None
         
-    def set_strategy(self, strategy: Union[DictTradingStrategy, TradingStrategy]):
-        """Dict 기반 전략 또는 Phase 7 하이브리드 전략 설정"""
+    def set_strategy(self, strategy: TradingStrategy):
+        """TradingStrategy 설정"""
         self.strategy = strategy
         
     def set_broker(self, broker: SimpleBroker):
@@ -130,10 +129,14 @@ class BacktestEngine(BacktestEngineBase):
         order = pending_order['order']
         signal_price = pending_order['signal_price']
         
-        # 체결 가격 결정 (현재 캔들 시가 기준)
-        if self.execution_mode == "close":
+        # 멀티심볼 환경: 현재 캔들 심볼과 주문 심볼이 다르면 체결하지 않음
+        if order.symbol != current_candle['symbol']:
+            return None
+        
+        # 체결 가격 결정 (같은 심볼이므로 현재 캔들 가격 사용)
+        if self.execution_mode == "close": # (default)
             execution_price = current_candle['close']
-        else:  # "open" (default)
+        else:  # "open" 
             execution_price = current_candle['open']
         
         # 슬리피지 적용 (간단한 랜덤 슬리피지)
@@ -174,7 +177,7 @@ class BacktestEngine(BacktestEngineBase):
                         symbol=order.symbol,
                         quantity=total_quantity,
                         avg_price=avg_price,
-                        market_price=final_price
+                        market_price=current_candle['close']  # 올바른 시장가격 사용
                     )
                     portfolio.positions[order.symbol] = new_position
                     
@@ -200,7 +203,7 @@ class BacktestEngine(BacktestEngineBase):
                         symbol=order.symbol,
                         quantity=new_quantity,
                         avg_price=current_position.avg_price,  # 평단은 유지
-                        market_price=final_price
+                        market_price=current_candle['close']  # 올바른 시장가격 사용
                     )
                     portfolio.positions[order.symbol] = new_position
                     
@@ -352,7 +355,7 @@ class BacktestEngine(BacktestEngineBase):
             pbar = self.create_progress_bar(len(enriched_data), "백테스팅 진행")
         
         try:
-            # Dict Native 루프: 극고속 처리
+            # Dict Native 루프
             for i, current_candle in enumerate(enriched_data):
                 
                 # 0단계: 브로커에게 현재 시장 데이터 업데이트 (Dict 형태로 변환)
@@ -417,19 +420,14 @@ class BacktestEngine(BacktestEngineBase):
             portfolio = self.broker.get_portfolio()
             current_cash = portfolio.cash
             
-            # 포지션 평가 (현재 캔들의 종가 기준)
+            # 포지션 평가 - 브로커가 관리하는 market_price 사용 (멀티심볼 지원)
             total_position_value = 0.0
-            current_price = current_candle.get('close', 0.0)
             
             for symbol, position in portfolio.positions.items():
                 if position.quantity > 0:
-                    # 모든 포지션을 현재 캔들의 종가로 평가
-                    # (현재는 단일 심볼이므로 current_candle의 종가 사용)
-                    if symbol == current_candle.get('symbol', ''):
-                        total_position_value += position.quantity * current_price
-                    else:
-                        # 다른 심볼의 경우 평균 매수가 사용 (fallback)
-                        total_position_value += position.quantity * position.avg_price
+                    # 🔥 핵심 수정: 브로커가 이미 관리하는 market_price 사용
+                    # _update_broker_market_data에서 각 심볼별로 업데이트된 정확한 시장가격
+                    total_position_value += position.quantity * position.market_price
             
             # 총 포트폴리오 평가금 = 현금 + 포지션 평가금
             total_equity = current_cash + total_position_value
@@ -1149,16 +1147,11 @@ class BacktestEngine(BacktestEngineBase):
         
         # 2단계: 지표 계산 (시간 측정)
         indicator_start = time.time()
-        if isinstance(self.strategy, TradingStrategy):
-            # Polars DataFrame으로 직접 지표 계산 (변환 과정 제거!)
-            enriched_df = self.strategy.precompute_indicators(raw_data_df)
-            
-            # 백테스팅 루프용으로만 List[Dict] 변환
-            enriched_data = enriched_df.to_dicts()
-        else:
-            # 기존 DictTradingStrategy의 경우만 Dict 변환
-            raw_data_dict = raw_data_df.to_dicts()
-            enriched_data = self.strategy.precompute_indicators_dict(raw_data_dict)
+        # Polars DataFrame으로 직접 지표 계산
+        enriched_df = self.strategy.precompute_indicators(raw_data_df)
+        
+        # 백테스팅 루프용으로만 List[Dict] 변환
+        enriched_data = enriched_df.to_dicts()
         indicator_time = time.time() - indicator_start
         
         # 3단계: 백테스팅 루프 실행 (시간 측정)

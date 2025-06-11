@@ -296,8 +296,7 @@ class TradingStrategy(StrategyBase):
         target_value = portfolio_value * self.position_size_pct
         return target_value / price if price > 0 else 0.0
     
-    def generate_signals_dict(self, current_data: Dict[str, Any], 
-                            historical_data: Optional[List[Dict[str, Any]]] = None) -> List[Order]:
+    def generate_signals_dict(self, current_data: Dict[str, Any], ) -> List[Order]:
         """Dict 기반 신호 생성 (서브클래스에서 구현)
         
         Args:

@@ -1,39 +1,12 @@
-# 프로젝트 루트를 Python 경로에 추가
-import sys
-import os
-from pathlib import Path
+"""
+간단한 SMA 전략
 
-# 현재 노트북의 위치에서 프로젝트 루트 찾기
-current_dir = Path.cwd()
-if 'examples' in str(current_dir):
-    # examples 폴더에서 실행하는 경우
-    project_root = current_dir.parent.parent
-else:
-    # 프로젝트 루트에서 실행하는 경우
-    project_root = current_dir
+TradingStrategy를 상속한 단순 이동평균 전략
+"""
 
-# 프로젝트 루트를 Python 경로에 추가
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
-
-# 필요한 모듈 가져오기
 from typing import List, Dict, Any, Optional
-from datetime import datetime
-
-from quantbt import (
-    # Phase 7 하이브리드 전략 시스템
-    TradingStrategy,
-    BacktestEngine,  # Dict Native 엔진 사용!
-    
-    # 기본 모듈들
-    SimpleBroker, 
-    BacktestConfig,
-    UpbitDataProvider,
-    
-    # 주문 관련
-    Order, OrderSide, OrderType,
-)
-
+from ...core.interfaces.strategy import TradingStrategy
+from ...core.entities.order import Order, OrderSide, OrderType
 
 class SimpleSMAStrategy(TradingStrategy):
     """SMA 전략
@@ -120,48 +93,3 @@ class SimpleSMAStrategy(TradingStrategy):
             # print(f"📉 매도 신호: {symbol} @ {current_price:,.0f}원 (SMA{self.sell_sma}: {sell_sma:,.0f})")
         
         return orders
-
-
-
-# 1. 업비트 데이터 프로바이더
-print("🔄 데이터 프로바이더 초기화 중...")
-upbit_provider = UpbitDataProvider()
-
-# 2. 백테스팅 설정 (Phase 7 최적화)
-config = BacktestConfig(
-    symbols=["KRW-BTC"],
-    start_date=datetime(2024, 1, 1),
-    end_date=datetime(2024, 1, 31), 
-    timeframe="1m",  # 1시간봉 (1분봉보다 빠름)
-    initial_cash=10_000_000,  # 1천만원
-    commission_rate=0.0,      # 수수료 0% (테스트용) - 실제 백테스팅에는 적절한 값 사용
-    slippage_rate=0.0,         # 슬리피지 0% (테스트용) - 실제 백테스팅에는 적절한 값 사용
-    save_portfolio_history=True
-)
-
-# 3. Phase 7 하이브리드 SMA 전략
-print("⚡ Phase 7 하이브리드 전략 초기화 중...")
-strategy = SimpleSMAStrategy(
-    buy_sma=15,   # 매수: 가격이 15시간 이평선 상회
-    sell_sma=30   # 매도: 가격이 30시간 이평선 하회
-)
-
-# 4. 브로커 설정
-broker = SimpleBroker(
-    initial_cash=config.initial_cash,
-    commission_rate=config.commission_rate,
-    slippage_rate=config.slippage_rate
-)
-
-# 5. Dict Native 백테스트 엔진 (Phase 7)
-print("🚀 Dict Native 백테스트 엔진 초기화 중...")
-engine = BacktestEngine()  # Dict Native 엔진 사용!
-engine.set_strategy(strategy)
-engine.set_data_provider(upbit_provider)
-engine.set_broker(broker)
-
-# 7. 결과 출력
-result = engine.run(config)
-    
-# 결과 요약 출력
-result.print_summary()

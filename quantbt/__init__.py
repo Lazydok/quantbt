@@ -19,18 +19,15 @@ from .core.utils.timeframe import TimeframeUtils
 # 전략 기본 클래스
 from .core.interfaces.strategy import StrategyBase, TradingStrategy, BacktestContext
 
-# Dict 기반 고성능 전략 (신규 추가)
-from .core.strategies.dict_based import DictTradingStrategy
-
 # 백테스팅 설정 및 결과
 from .core.value_objects.backtest_config import BacktestConfig
 from .core.value_objects.backtest_result import BacktestResult
 from .core.value_objects.grid_search_config import GridSearchConfig
 from .core.value_objects.grid_search_result import GridSearchResult, GridSearchSummary
 
-# 백테스팅 엔진 - Dict Native가 기본!
+# 백테스팅 엔진
 from .core.interfaces.backtest_engine import IBacktestEngine, BacktestEngineBase
-from .infrastructure.engine.base_engine import BacktestEngine  # 기본 엔진
+from .infrastructure.engine.base_engine import BacktestEngine
 
 # 데이터 제공자
 from .infrastructure.data.csv_provider import CSVDataProvider
@@ -40,7 +37,7 @@ from .infrastructure.data.upbit_provider import UpbitDataProvider
 from .infrastructure.brokers.simple_broker import SimpleBroker
 
 # 샘플 전략
-from .examples.strategies.sma_dict_strategy import SimpleSMAStrategyDict
+from .examples.strategies.simple_sma_strategy import SimpleSMAStrategy
 
 __all__ = [
     # 엔티티
@@ -62,27 +59,23 @@ __all__ = [
     # 전략
     "StrategyBase",
     "TradingStrategy",
-    "MultiTimeframeTradingStrategy",
     "BacktestContext",
-    
-    
-    "DictTradingStrategy",
     
     # 백테스팅
     "BacktestConfig",
     "BacktestResult",
     "GridSearchConfig",
-    "SMAGridSearchConfig", 
     "GridSearchResult",
     "GridSearchSummary",
     "IBacktestEngine",
     "BacktestEngineBase",
-    "BacktestEngine",  # 기본 엔진
+    "BacktestEngine",
     
     # 인프라스트럭처
     "CSVDataProvider",
     "UpbitDataProvider",
     "SimpleBroker",
     
-    "SimpleSMAStrategyDict",
+    # 샘플 전략
+    "SimpleSMAStrategy",
 ] 
