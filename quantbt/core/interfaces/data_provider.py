@@ -9,12 +9,10 @@ from typing import Protocol, List, AsyncIterator, Optional, Dict
 from datetime import datetime
 import polars as pl
 
-from ..entities.market_data import MarketDataBatch
 
 # 멀티타임프레임 지원을 위한 import 추가
 try:
     from ..utils.timeframe import TimeframeUtils
-    from ..entities.market_data import MultiTimeframeDataBatch
     MULTI_TIMEFRAME_AVAILABLE = True
 except ImportError:
     MULTI_TIMEFRAME_AVAILABLE = False
@@ -40,26 +38,6 @@ class IDataProvider(Protocol):
             
         Returns:
             시장 데이터 DataFrame
-        """
-        ...
-    
-    async def get_data_stream(
-        self,
-        symbols: List[str],
-        start: datetime,
-        end: datetime,
-        timeframe: str = "1D"
-    ) -> AsyncIterator[MarketDataBatch]:
-        """시장 데이터 스트림
-        
-        Args:
-            symbols: 심볼 리스트
-            start: 시작 시간
-            end: 종료 시간
-            timeframe: 시간 프레임
-            
-        Yields:
-            시간순으로 정렬된 시장 데이터 배치
         """
         ...
     

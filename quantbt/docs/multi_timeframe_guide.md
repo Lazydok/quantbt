@@ -54,7 +54,6 @@ sequenceDiagram
     participant DataProvider as Data Provider
     participant TimeframeUtils as Timeframe Utils
     participant Strategy as Multi-Timeframe Strategy
-    participant Batch as MultiTimeframeDataBatch
     
     Engine->>DataProvider: 1분봉 원시 데이터 요청
     DataProvider-->>Engine: 1분봉 OHLCV 데이터
@@ -67,12 +66,10 @@ sequenceDiagram
     Strategy-->>Engine: 타임프레임별 지표 데이터
     
     loop 각 시점별 백테스팅
-        Engine->>Batch: 현재 시점 멀티타임프레임 배치 생성
-        Engine->>Strategy: on_data(multi_batch)
+        Engine->>Engine: 현재 시점 멀티타임프레임 Dict 생성
+        Engine->>Strategy: generate_signals_multi_timeframe(multi_current_data)
         
-        Strategy->>Batch: get_timeframe_indicator("1h", "sma_20")
-        Strategy->>Batch: get_timeframe_latest("5m", symbol)
-        Strategy->>Batch: get_cross_timeframe_signal(...)
+        Note over Strategy: multi_current_data = {<br/>"1m": {symbol, close, sma_10, ...},<br/>"5m": {symbol, close, sma_5, rsi_14, ...}}
         
         Strategy-->>Engine: 멀티타임프레임 분석 기반 주문
     end

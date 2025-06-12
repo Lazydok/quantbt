@@ -15,7 +15,6 @@ from ...core.interfaces.data_provider import DataProviderBase
 # 멀티타임프레임 지원을 위한 import 추가
 try:
     from ...core.utils.timeframe import TimeframeUtils
-    from ...core.entities.market_data import MultiTimeframeDataBatch
     MULTI_TIMEFRAME_AVAILABLE = True
 except ImportError:
     MULTI_TIMEFRAME_AVAILABLE = False

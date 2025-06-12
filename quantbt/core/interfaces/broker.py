@@ -11,7 +11,6 @@ from datetime import datetime
 from ..entities.order import Order
 from ..entities.trade import Trade
 from ..entities.position import Portfolio
-from ..entities.market_data import MarketDataBatch
 
 
 class IBroker(Protocol):
@@ -66,7 +65,7 @@ class IBroker(Protocol):
         """
         ...
     
-    def update_market_data(self, data: MarketDataBatch) -> None:
+    def update_market_data(self, data: Dict[str, Any]) -> None:
         """시장 데이터 업데이트
         
         Args:
@@ -83,7 +82,7 @@ class BrokerBase(ABC):
         self.portfolio = Portfolio(positions={}, cash=initial_cash)
         self.orders: Dict[str, Order] = {}
         self.trades: List[Trade] = []
-        self.current_data: Optional[MarketDataBatch] = None
+        self.current_data: Optional[Dict[str, Any]] = None
         
     def submit_order(self, order: Order) -> str:
         """주문 제출"""
@@ -128,7 +127,7 @@ class BrokerBase(ABC):
         """거래 내역 조회"""
         return self.trades.copy()
     
-    def update_market_data(self, data: MarketDataBatch) -> None:
+    def update_market_data(self, data: Dict[str, Any]) -> None:
         """시장 데이터 업데이트"""
         self.current_data = data
         

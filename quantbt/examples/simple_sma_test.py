@@ -21,7 +21,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from quantbt import (
-    # Phase 7 하이브리드 전략 시스템
+    # Dict Native 전략 시스템
     TradingStrategy,
     BacktestEngine,  # Dict Native 엔진 사용!
     
@@ -38,9 +38,9 @@ from quantbt import (
 class SimpleSMAStrategy(TradingStrategy):
     """SMA 전략
     
-    하이브리드 방식:
-    - 지표 계산: Polars 벡터연산
-    - 신호 생성: Dict Native 방식
+    고성능 스트리밍 방식:
+    - 지표 계산: Polars 벡터연산 
+    - 신호 생성: 행별 스트리밍 처리
     
     매수: 가격이 SMA15 상회
     매도: 가격이 SMA30 하회  
@@ -76,10 +76,10 @@ class SimpleSMAStrategy(TradingStrategy):
         ])
     
     def generate_signals_dict(self, current_data: Dict[str, Any]) -> List[Order]:
-        """Dict 기반 신호 생성"""
+        """행 데이터 기반 신호 생성"""
         orders = []
         
-        if not self._broker:
+        if not self.broker:
             return orders
         
         symbol = current_data['symbol']
@@ -127,7 +127,7 @@ class SimpleSMAStrategy(TradingStrategy):
 print("🔄 데이터 프로바이더 초기화 중...")
 upbit_provider = UpbitDataProvider()
 
-# 2. 백테스팅 설정 (Phase 7 최적화)
+# 2. 백테스팅 설정
 config = BacktestConfig(
     symbols=["KRW-BTC"],
     start_date=datetime(2024, 1, 1),
@@ -139,8 +139,8 @@ config = BacktestConfig(
     save_portfolio_history=True
 )
 
-# 3. Phase 7 하이브리드 SMA 전략
-print("⚡ Phase 7 하이브리드 전략 초기화 중...")
+# 3. 스트리밍 SMA 전략
+print("⚡ 스트리밍 전략 초기화 중...")
 strategy = SimpleSMAStrategy(
     buy_sma=15,   # 매수: 가격이 15시간 이평선 상회
     sell_sma=30   # 매도: 가격이 30시간 이평선 하회
@@ -153,14 +153,15 @@ broker = SimpleBroker(
     slippage_rate=config.slippage_rate
 )
 
-# 5. Dict Native 백테스트 엔진 (Phase 7)
-print("🚀 Dict Native 백테스트 엔진 초기화 중...")
-engine = BacktestEngine()  # Dict Native 엔진 사용!
+# 5. 고성능 스트리밍 백테스트 엔진
+print("🚀 고성능 스트리밍 백테스트 엔진 초기화 중...")
+engine = BacktestEngine()  # DataFrame 스트리밍 처리
 engine.set_strategy(strategy)
 engine.set_data_provider(upbit_provider)
 engine.set_broker(broker)
 
-# 7. 결과 출력
+# 6. 백테스팅 실행 및 결과 출력
+print("📊 백테스팅 실행 중...")
 result = engine.run(config)
     
 # 결과 요약 출력

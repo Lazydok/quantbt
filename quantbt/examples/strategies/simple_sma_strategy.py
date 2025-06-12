@@ -48,7 +48,7 @@ class SimpleSMAStrategy(TradingStrategy):
             sell_sma.alias(f"sma_{self.sell_sma}")
         ])
     
-    def generate_signals_dict(self, current_data: Dict[str, Any]) -> List[Order]:
+    def _generate_single_timeframe_signals(self, current_data: Dict[str, Any]) -> List[Order]:
         """Dict 기반 신호 생성"""
         orders = []
         

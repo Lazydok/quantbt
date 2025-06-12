@@ -43,7 +43,7 @@ class IBacktestEngine(Protocol):
         """
         ...
     
-    async def run(self, config: BacktestConfig) -> BacktestResult:
+    def run(self, config: BacktestConfig) -> BacktestResult:
         """백테스팅 실행
         
         Args:
@@ -133,7 +133,7 @@ class BacktestEngineBase(ABC):
             raise ValueError("Broker not set")
     
     @abstractmethod
-    async def _execute_backtest(self, config: BacktestConfig) -> BacktestResult:
+    def _execute_backtest(self, config: BacktestConfig) -> BacktestResult:
         """백테스팅 실행 - 서브클래스에서 구현
         
         예시 사용법:
@@ -146,7 +146,7 @@ class BacktestEngineBase(ABC):
             try:
                 for i, data_point in enumerate(market_data):
                     # 백테스팅 로직 수행
-                    await self._process_data_point(data_point)
+                    self._process_data_point(data_point)
                     
                     # 진행률 업데이트
                     self.update_progress_bar(pbar, f"처리중... {i+1}/{data_count}")
@@ -156,7 +156,7 @@ class BacktestEngineBase(ABC):
         """
         pass
     
-    async def run(self, config: BacktestConfig) -> BacktestResult:
+    def run(self, config: BacktestConfig) -> BacktestResult:
         """백테스팅 실행"""
         if self._is_running:
             raise RuntimeError("Backtest is already running")
@@ -168,7 +168,7 @@ class BacktestEngineBase(ABC):
             self._validate_components()
             
             # 백테스팅 실행
-            result = await self._execute_backtest(config)
+            result = self._execute_backtest(config)
             
             return result
         finally:
