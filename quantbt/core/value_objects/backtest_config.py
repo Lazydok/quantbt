@@ -82,16 +82,14 @@ class BacktestConfig:
             
             for tf in self.timeframes:
                 if TimeframeUtils.validate_timeframe(tf):
-                    normalized_tf = TimeframeUtils._normalize_timeframe(tf)
+                    normalized_tf = TimeframeUtils.normalize_timeframe(tf)
                     if normalized_tf not in valid_timeframes:
                         valid_timeframes.append(normalized_tf)
                 else:
                     raise ValueError(f"지원되지 않는 타임프레임: {tf}")
             
             # 시간 순으로 정렬 (작은 것부터)
-            timeframe_minutes = [(tf, TimeframeUtils.get_timeframe_minutes(tf)) for tf in valid_timeframes]
-            timeframe_minutes.sort(key=lambda x: x[1])
-            sorted_timeframes = [tf for tf, _ in timeframe_minutes]
+            sorted_timeframes = TimeframeUtils.sort_timeframes_by_duration(valid_timeframes)
             
             object.__setattr__(self, 'timeframes', sorted_timeframes)
             

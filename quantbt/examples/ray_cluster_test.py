@@ -1,13 +1,13 @@
 """
-SimpleSMAStrategy Ray 기반 파라메터 최적화 예제 (Phase 7 적용)
+SimpleSMAStrategy RayClusterManager 기반 파라메터 최적화 예제
 
-Phase 7에서 구현된 RayDataManager 중앙집중식 데이터 관리를 활용하여
-효율적인 분산 백테스팅을 수행합니다.
+RayClusterManager를 활용한 효율적인 분산 백테스팅을 수행합니다.
 
 핵심 변경사항:
-- RayDataManager를 통한 중앙집중식 데이터 관리
-- Ray Object Store를 활용한 제로카피 데이터 공유
-- API 호출 75% 감소, 메모리 사용량 75% 감소
+- RayClusterManager를 통한 클러스터 관리
+- 리소스 최적화 및 모니터링
+- 자동 워커 수 계산
+- 클러스터 상태 진단
 """
 
 # 프로젝트 루트를 Python 경로에 추가
@@ -34,10 +34,6 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import time
 import ray
-import logging
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 from quantbt import (
     # Dict Native 전략 시스템
@@ -53,11 +49,14 @@ from quantbt import (
     Order, OrderSide, OrderType,
 )
 
-# Ray 기반 최적화 시스템 (Phase 7 통합)
+# Ray 기반 최적화 시스템 (RayClusterManager 포함)
 from quantbt.ray import (
+    RayClusterManager,
     RayDataManager, 
     BacktestActor,
-    QuantBTEngineAdapter
+    QuantBTEngineAdapter,
+    RayResultAggregator,
+    RayParameterOptimizer
 )
 
 
@@ -162,27 +161,52 @@ class SimpleSMAStrategy(TradingStrategy):
         return orders
 
 
-async def run_sma_optimization():
-    """SimpleSMAStrategy Ray 기반 파라메터 최적화 (Phase 7 적용)"""
+async def run_sma_optimization_with_cluster_manager():
+    """SimpleSMAStrategy RayClusterManager 기반 파라메터 최적화 (개선된 RayDataManager 사용)"""
     
-    print("🚀 Ray 기반 SimpleSMAStrategy 파라메터 최적화 시작 (Phase 7)")
+    print("🚀 RayClusterManager + 개선된 RayDataManager 기반 SimpleSMAStrategy 파라메터 최적화 시작")
     print("=" * 70)
     
-    # 1. Ray 초기화
-    if not ray.is_initialized():
-        ray.init(
-            num_cpus=4,
-            object_store_memory=1000000000,  # 1GB
-            ignore_reinit_error=True,
-            logging_level="INFO"  # ERROR에서 INFO로 변경하여 더 많은 로그 확인
-        )
-        print("✅ Ray 클러스터 초기화 완료")
+    # 1. RayClusterManager 설정 및 초기화
+    ray_cluster_config = {
+        "num_cpus": 4,
+        "object_store_memory": 1000 * 1024 * 1024,  # 1GB
+        "ignore_reinit_error": True,
+        "logging_level": "ERROR"
+    }
     
-    # 2. 백테스트 기본 설정
+    cluster_manager = RayClusterManager(ray_cluster_config)
+    
+    print("🔧 Ray 클러스터 초기화 중...")
+    if not cluster_manager.initialize_cluster():
+        print("❌ Ray 클러스터 초기화 실패")
+        return
+    
+    print("✅ Ray 클러스터 초기화 완료")
+    
+    # 2. 클러스터 상태 및 리소스 정보 출력
+    cluster_resources = cluster_manager.get_cluster_resources()
+    available_resources = cluster_manager.get_available_resources()
+    
+    print(f"📊 클러스터 리소스:")
+    print(f"   - 총 CPU: {cluster_resources['cpu']}")
+    print(f"   - Object Store: {cluster_resources['object_store']:,} bytes")
+    print(f"   - 노드 수: {cluster_resources['nodes']}")
+    print(f"   - 사용 가능한 CPU: {available_resources['cpu']}")
+    
+    # 3. 최적 워커 수 계산
+    optimal_workers = cluster_manager.calculate_optimal_workers(
+        memory_per_worker_gb=0.2,  # 워커당 200MB
+        max_workers=8
+    )
+    
+    print(f"⚡ 최적 워커 수: {optimal_workers}")
+    
+    # 4. 백테스트 기본 설정
     config = BacktestConfig(
         symbols=["KRW-BTC"],
         start_date=datetime(2024, 1, 1),
-        end_date=datetime(2024, 3, 31),
+        end_date=datetime(2024, 12, 31),
         timeframe="1m",
         initial_cash=10_000_000,
         commission_rate=0.0,
@@ -191,13 +215,13 @@ async def run_sma_optimization():
     )
     print("✅ 백테스트 설정 완료")
     
-    # 3. RayDataManager 생성 (Phase 7 핵심)
-    print("\n🔧 Phase 7: RayDataManager 중앙집중식 데이터 관리 시작")
+    # 5. 개선된 RayDataManager 생성 및 데이터 로딩
+    print("\n🔧 개선된 RayDataManager 생성 및 데이터 로딩")
     data_manager = RayDataManager.remote()
     print("✅ RayDataManager 생성 완료")
     
-    # 4. 데이터 미리 로딩 (한 번만 실행)
-    print("📊 실제 데이터 로딩 중... (1회만 실행)")
+    # 데이터 미리 로딩 (제로카피 방식)
+    print("📊 실제 데이터 로딩 중... (제로카피 방식)")
     data_loading_start = time.time()
     
     data_ref = await data_manager.load_real_data.remote(
@@ -210,17 +234,28 @@ async def run_sma_optimization():
     data_loading_time = time.time() - data_loading_start
     print(f"✅ 데이터 로딩 완료: {data_loading_time:.2f}초")
     
-    # 5. 캐시 통계 확인
+    # 캐시 통계 확인
     cache_stats = await data_manager.get_cache_stats.remote()
     print(f"📈 캐시 통계: {cache_stats['cache_size']}개 데이터, {cache_stats['total_data_size']:,} bytes")
     
-    # 6. BacktestActor들 생성 (RayDataManager 참조와 함께)
-    num_actors = 4
-    print(f"\n🎯 {num_actors}개 BacktestActor 생성 중...")
+    # 6. 워커 환경 준비
+    worker_env = cluster_manager.prepare_worker_environment(
+        expected_tasks=16,  # 예상 작업 수
+        memory_per_task_mb=200  # 작업당 메모리
+    )
+    
+    print(f"🎯 워커 환경 준비:")
+    print(f"   - 최적 워커 수: {worker_env['optimal_workers']}")
+    print(f"   - 작업당 메모리: {worker_env['memory_per_task_mb']}MB")
+    
+    # 7. 개선된 RayDataManager를 사용하는 BacktestActor 생성
+    num_actors = worker_env['optimal_workers']
+    print(f"\n🎯 {num_actors}개 BacktestActor 생성 중... (개선된 RayDataManager 사용)")
     
     actors = []
     for i in range(num_actors):
-        actor = BacktestActor.remote(f"actor_{i}", data_manager)
+        # 개선된 RayDataManager 참조 전달
+        actor = BacktestActor.remote(f"actor_{i}", data_manager_ref=data_manager)
         actors.append(actor)
     
     # Actor 초기화
@@ -242,17 +277,23 @@ async def run_sma_optimization():
     successful_actors = sum(init_results)
     print(f"✅ BacktestActor 초기화: {successful_actors}/{num_actors}개 성공")
     
-    # 7. 파라메터 그리드 정의
+    # 8. 클러스터 상태 모니터링
+    cluster_health = cluster_manager.monitor_cluster_health()
+    print(f"\n📊 클러스터 상태: {cluster_health['status']}")
+    print(f"   - 노드 수: {cluster_health['nodes']}")
+    print(f"   - CPU 사용률: {(cluster_resources['cpu'] - cluster_health['available']['cpu']) / cluster_resources['cpu'] * 100:.1f}%")
+    
+    # 9. 파라메터 그리드 정의
     param_grid = {
         'buy_sma': [10, 15, 20, 25],      # 매수 SMA: 10, 15, 20, 25
         'sell_sma': [25, 30, 35, 40]      # 매도 SMA: 25, 30, 35, 40
     }
     total_combinations = len(param_grid['buy_sma']) * len(param_grid['sell_sma'])
-    print(f"✅ 파라메터 그리드 정의 완료: {total_combinations}개 조합")
+    print(f"\n✅ 파라메터 그리드 정의 완료: {total_combinations}개 조합")
     print(f"   - 매수 SMA: {param_grid['buy_sma']}")
     print(f"   - 매도 SMA: {param_grid['sell_sma']}")
     
-    # 8. 파라메터 조합 생성
+    # 10. 파라메터 조합 생성
     from itertools import product
     param_combinations = []
     for buy_sma, sell_sma in product(param_grid['buy_sma'], param_grid['sell_sma']):
@@ -261,8 +302,8 @@ async def run_sma_optimization():
             'sell_sma': sell_sma
         })
     
-    # 9. 분산 백테스트 실행 (Phase 7: 모든 Actor가 동일한 데이터 공유)
-    print("\n⚡ Phase 7: 분산 백테스트 실행 (제로카피 데이터 공유)")
+    # 11. 분산 백테스트 실행 (개선된 RayDataManager 사용)
+    print("\n⚡ 분산 백테스트 실행 시작 (개선된 RayDataManager 제로카피)")
     optimization_start = time.time()
     
     # Actor별로 작업 분배
@@ -297,36 +338,99 @@ async def run_sma_optimization():
                 'task_id': i
             })
     
-    # 10. 결과 분석 및 출력
     optimization_time = time.time() - optimization_start
+    
+    # 12. 최종 클러스터 상태 확인
+    final_cluster_health = cluster_manager.monitor_cluster_health()
+    print(f"\n📊 최종 클러스터 상태: {final_cluster_health['status']}")
+    
+    # 13. 결과 분석
+    print("\n" + "=" * 70)
+    print("📊 개선된 RayClusterManager + RayDataManager 최적화 결과 분석")
+    print("=" * 70)
+    
     successful_results = [r for r in results if r['success']]
     failed_results = [r for r in results if not r['success']]
     
-    print(f"\n📊 최적화 완료: {optimization_time:.2f}초")
-    print(f"✅ 성공: {len(successful_results)}/{total_combinations}개")
-    print(f"❌ 실패: {len(failed_results)}/{total_combinations}개")
+    print(f"✅ 총 실행 시간: {optimization_time:.2f}초")
+    print(f"✅ 데이터 로딩 시간: {data_loading_time:.2f}초")
+    print(f"✅ 백테스트 실행 시간: {optimization_time - data_loading_time:.2f}초")
+    print(f"✅ 성공한 조합: {len(successful_results)}/{total_combinations}개")
+    print(f"✅ 성공률: {len(successful_results)/total_combinations*100:.1f}%")
     
     if successful_results:
-        print("\n🏆 성공한 파라메터 조합:")
-        for result in successful_results[:5]:  # 상위 5개만 출력
-            params = result['params']
-            print(f"   - buy_sma: {params['buy_sma']}, sell_sma: {params['sell_sma']}")
+        # 최적 파라메터 찾기
+        best_result = max(successful_results, 
+                         key=lambda x: x['result'].get('sharpe_ratio', -999))
+        
+        print(f"\n🏆 최적 파라메터:")
+        print(f"   - 매수 SMA: {best_result['params']['buy_sma']}")
+        print(f"   - 매도 SMA: {best_result['params']['sell_sma']}")
+        
+        print(f"\n📈 최고 성과:")
+        print(f"   - 샤프 비율: {best_result['result'].get('sharpe_ratio', 0):.4f}")
+        print(f"   - 총 수익률: {best_result['result'].get('total_return', 0):.4f}")
+        
+        # 성능 통계
+        sharpe_ratios = [r['result'].get('sharpe_ratio', 0) for r in successful_results]
+        returns = [r['result'].get('total_return', 0) for r in successful_results]
+        
+        print(f"\n📊 성능 통계:")
+        print(f"   - 평균 샤프 비율: {sum(sharpe_ratios)/len(sharpe_ratios):.4f}")
+        print(f"   - 최고 샤프 비율: {max(sharpe_ratios):.4f}")
+        print(f"   - 최저 샤프 비율: {min(sharpe_ratios):.4f}")
+        print(f"   - 평균 수익률: {sum(returns)/len(returns):.4f}")
     
-    if failed_results:
-        print("\n💥 실패한 파라메터 조합:")
-        for result in failed_results[:3]:  # 상위 3개만 출력
-            params = result['params']
-            error = result.get('error', 'Unknown error')
-            print(f"   - buy_sma: {params['buy_sma']}, sell_sma: {params['sell_sma']} - {error}")
+    # 14. 개선된 시스템 효율성 분석
+    print(f"\n⚡ 개선된 RayClusterManager + RayDataManager 효율성:")
     
-    return results
+    # 클러스터 상세 정보
+    detailed_info = cluster_manager.get_detailed_cluster_info()
+    print(f"   - 클러스터 가동 시간: {detailed_info['metrics']['uptime']:.1f}초")
+    print(f"   - CPU 사용률: {detailed_info['metrics']['cpu_utilization']:.1%}")
+    print(f"   - 자동 워커 수 계산: {optimal_workers}개")
+    print(f"   - 리소스 모니터링: {cluster_health['status']}")
+    
+    # 최종 캐시 통계
+    final_cache_stats = await data_manager.get_cache_stats.remote()
+    print(f"   - 데이터 캐시 히트: {final_cache_stats['total_access_count']}회")
+    print(f"   - 제로카피 데이터 공유: 효율적인 메모리 사용")
+    print(f"   - 고급 캐싱: 통계 및 모니터링 지원")
+    
+    # 15. 클러스터 정리
+    cluster_manager.shutdown_cluster()
+    print("✅ 클러스터 매니저 종료 완료")
+    
+    return {
+        'best_params': best_result['params'] if successful_results else {},
+        'best_sharpe_ratio': best_result['result'].get('sharpe_ratio', 0) if successful_results else 0,
+        'best_total_return': best_result['result'].get('total_return', 0) if successful_results else 0, 
+        'total_combinations': total_combinations,
+        'successful_combinations': len(successful_results),
+        'execution_time': optimization_time,
+        'data_loading_time': data_loading_time,
+        'cluster_performance': {
+            'optimal_workers': optimal_workers,
+            'cluster_status': final_cluster_health['status'],
+            'cpu_utilization': detailed_info['metrics']['cpu_utilization'],
+            'uptime': detailed_info['metrics']['uptime']
+        },
+        'cache_stats': final_cache_stats
+    }
 
 
 if __name__ == "__main__":
     try:
         # 비동기 실행
-        results = asyncio.run(run_sma_optimization())
-        print(results)
+        results = asyncio.run(run_sma_optimization_with_cluster_manager())
+        
+        if results and results['successful_combinations'] > 0:
+            print("\n🎉 SimpleSMAStrategy RayClusterManager 최적화 완료!")
+            print("✅ RayClusterManager 기반 클러스터 관리 성공")
+            print("✅ 자동 리소스 최적화 및 모니터링 완료")
+            print("최적 파라메터로 실제 백테스팅을 실행해보세요.")
+        else:
+            print("\n❌ 최적화 실패")
             
     except Exception as e:
         print(f"\n💥 실행 중 오류 발생: {e}")
@@ -337,4 +441,4 @@ if __name__ == "__main__":
         # Ray 정리
         if ray.is_initialized():
             ray.shutdown()
-            print("\n✅ Ray 클러스터 종료 완료") 
+            print("\n✅ Ray 클러스터 종료 완료")

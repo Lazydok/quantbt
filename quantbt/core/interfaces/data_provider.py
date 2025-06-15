@@ -118,8 +118,13 @@ class DataProviderBase(ABC):
     
     def validate_timeframe(self, timeframe: str) -> bool:
         """시간 프레임 유효성 검증"""
-        valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"]
-        return timeframe.lower() in [tf.lower() for tf in valid_timeframes]
+        try:
+            from ..utils.timeframe import TimeframeUtils
+            return TimeframeUtils.validate_timeframe(timeframe)
+        except ImportError:
+            # 백업 검증 (기존 방식)
+            valid_timeframes = ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w", "1M"]
+            return timeframe.lower() in [tf.lower() for tf in valid_timeframes]
     
     def supports_timeframe(self, timeframe: str) -> bool:
         """타임프레임 지원 여부 확인"""

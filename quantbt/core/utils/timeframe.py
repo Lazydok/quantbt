@@ -2,6 +2,7 @@
 타임프레임 변환 및 리샘플링 유틸리티
 
 1분봉 기반 데이터를 다양한 타임프레임으로 변환하는 기능을 제공합니다.
+동적 타임프레임 지원: 1분의 배수로 임의의 값 설정 가능 (예: 7m, 13h, 45d 등)
 """
 
 from typing import Dict, List, Optional
@@ -10,79 +11,77 @@ import re
 
 
 class TimeframeUtils:
-    """타임프레임 변환 및 리샘플링 유틸리티"""
+    """타임프레임 변환 및 리샘플링 유틸리티
     
-    # 지원되는 타임프레임과 분 단위 매핑
-    TIMEFRAME_MINUTES = {
-        "1m": 1,
-        "5m": 5,
-        "15m": 15,
-        "30m": 30,
-        "1h": 60,
-        "4h": 240,
-        "1d": 1440,
-        "1w": 10080,
-        "1M": 43200  # 약 30일
+    동적 타임프레임 지원:
+    - 숫자 + 단위 형태로 임의의 타임프레임 지원 (예: 7m, 13h, 45d)
+    - 지원 단위: m(분), h(시간), d(일), w(주), M(월)
+    - 모든 값은 1분의 배수로 변환되어 처리
+    """
+    
+    # 단위별 분 단위 변환 상수
+    UNIT_TO_MINUTES = {
+        'm': 1,          # 분
+        'h': 60,         # 시간 -> 분
+        'd': 1440,       # 일 -> 분 (24 * 60)
+        'w': 10080,      # 주 -> 분 (7 * 24 * 60)
+        'M': 43200       # 월 -> 분 (30 * 24 * 60, 근사값)
     }
+    
+    @classmethod
+    def parse_timeframe(cls, timeframe: str) -> tuple[int, str]:
+        """타임프레임 문자열을 숫자와 단위로 분리
+        
+        Args:
+            timeframe: 타임프레임 문자열 (예: "5m", "2h", "1d")
+            
+        Returns:
+            (숫자, 단위) 튜플
+            
+        Raises:
+            ValueError: 잘못된 형식인 경우
+        """
+        if not isinstance(timeframe, str):
+            raise ValueError(f"Timeframe must be string, got {type(timeframe)}")
+        
+        timeframe = timeframe.strip()
+        
+        # 정규식으로 숫자와 단위 분리
+        pattern = r'^(\d+)([mhdwM])$'
+        match = re.match(pattern, timeframe)
+        
+        if not match:
+            raise ValueError(f"Invalid timeframe format: {timeframe}. Expected format: number + unit (m/h/d/w/M)")
+        
+        number = int(match.group(1))
+        unit = match.group(2)
+        
+        if number <= 0:
+            raise ValueError(f"Timeframe number must be positive, got {number}")
+        
+        if unit not in cls.UNIT_TO_MINUTES:
+            raise ValueError(f"Unsupported unit: {unit}. Supported units: {list(cls.UNIT_TO_MINUTES.keys())}")
+        
+        return number, unit
     
     @classmethod
     def get_timeframe_minutes(cls, timeframe: str) -> int:
         """타임프레임 문자열을 분 단위로 변환
         
         Args:
-            timeframe: 타임프레임 문자열 (예: "1m", "5m", "1h", "1d")
+            timeframe: 타임프레임 문자열 (예: "5m", "2h", "1d")
             
         Returns:
             분 단위 시간
             
         Raises:
-            ValueError: 지원되지 않는 타임프레임인 경우
+            ValueError: 잘못된 타임프레임인 경우
         """
-        normalized_tf = cls._normalize_timeframe(timeframe)
-        
-        if normalized_tf not in cls.TIMEFRAME_MINUTES:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
-        
-        return cls.TIMEFRAME_MINUTES[normalized_tf]
-    
-    @classmethod
-    def _normalize_timeframe(cls, timeframe: str) -> str:
-        """타임프레임 문자열을 정규화
-        
-        Args:
-            timeframe: 원본 타임프레임 문자열
-            
-        Returns:
-            정규화된 타임프레임 문자열
-        """
-        # 대소문자 구분하여 월간 먼저 처리
-        tf = timeframe.strip()
-        
-        # 월간 패턴 먼저 확인 (대소문자 구분)
-        if re.match(r"^1M$|^1month$|^monthly$", tf):
-            return "1M"
-        
-        # 나머지는 소문자로 변환 후 패턴 매칭
-        tf_lower = tf.lower()
-        
-        # 패턴 매칭을 통한 정규화 (월간 제외)
-        patterns = {
-            r"^1m$|^1min$|^1minute$": "1m",
-            r"^5m$|^5min$|^5minutes$": "5m", 
-            r"^15m$|^15min$|^15minutes$": "15m",
-            r"^30m$|^30min$|^30minutes$": "30m",
-            r"^1h$|^1hr$|^1hour$|^60min$|^60minutes$": "1h",
-            r"^4h$|^4hr$|^4hours$|^240min$|^240minutes$": "4h",
-            r"^1d$|^1day$|^daily$|^1440min$|^1440minutes$": "1d",
-            r"^1w$|^1week$|^weekly$": "1w"
-        }
-        
-        for pattern, normalized in patterns.items():
-            if re.match(pattern, tf_lower):
-                return normalized
-        
-        # 매칭되지 않으면 원본 반환
-        return timeframe
+        try:
+            number, unit = cls.parse_timeframe(timeframe)
+            return number * cls.UNIT_TO_MINUTES[unit]
+        except Exception as e:
+            raise ValueError(f"Failed to parse timeframe '{timeframe}': {str(e)}")
     
     @classmethod
     def validate_timeframe(cls, timeframe: str) -> bool:
@@ -99,6 +98,23 @@ class TimeframeUtils:
             return True
         except ValueError:
             return False
+    
+    @classmethod
+    def normalize_timeframe(cls, timeframe: str) -> str:
+        """타임프레임 정규화
+        
+        Args:
+            timeframe: 원본 타임프레임 문자열
+            
+        Returns:
+            정규화된 타임프레임 문자열
+        """
+        try:
+            number, unit = cls.parse_timeframe(timeframe)
+            return f"{number}{unit}"
+        except ValueError:
+            # 파싱 실패 시 원본 반환
+            return timeframe.strip()
     
     @classmethod
     def resample_to_timeframe(
@@ -134,7 +150,7 @@ class TimeframeUtils:
             raise ValueError(f"Missing required columns: {missing_columns}")
         
         # 같은 타임프레임인 경우 원본 반환
-        if cls._normalize_timeframe(timeframe) == cls._normalize_timeframe(base_timeframe):
+        if cls.normalize_timeframe(timeframe) == cls.normalize_timeframe(base_timeframe):
             return data.sort(["symbol", "timestamp"])
         
         # 목표 타임프레임이 기본 타임프레임보다 작은 경우 에러
@@ -143,7 +159,7 @@ class TimeframeUtils:
         
         if target_minutes < base_minutes:
             raise ValueError(
-                f"Cannot resample from {base_timeframe} to smaller timeframe {timeframe}"
+                f"Cannot resample to smaller timeframe: {timeframe} ({target_minutes}m) < {base_timeframe} ({base_minutes}m)"
             )
         
         # Polars의 group_by_dynamic을 사용하여 리샘플링
@@ -185,36 +201,38 @@ class TimeframeUtils:
             return resampled
             
         except Exception as e:
-            raise ValueError(f"Failed to resample data: {str(e)}")
+            raise ValueError(f"Failed to resample data from {base_timeframe} to {timeframe}: {str(e)}")
     
     @classmethod
     def _convert_to_polars_interval(cls, timeframe: str) -> str:
         """타임프레임을 Polars interval 형식으로 변환
         
         Args:
-            timeframe: 정규화된 타임프레임
+            timeframe: 타임프레임 문자열
             
         Returns:
             Polars interval 문자열
         """
-        normalized_tf = cls._normalize_timeframe(timeframe)
-        
-        conversion_map = {
-            "1m": "1m",
-            "5m": "5m",
-            "15m": "15m", 
-            "30m": "30m",
-            "1h": "1h",
-            "4h": "4h",
-            "1d": "1d",
-            "1w": "1w",
-            "1M": "1mo"  # Polars는 "1mo"를 사용
-        }
-        
-        if normalized_tf not in conversion_map:
-            raise ValueError(f"Cannot convert timeframe to Polars interval: {timeframe}")
-        
-        return conversion_map[normalized_tf]
+        try:
+            number, unit = cls.parse_timeframe(timeframe)
+            
+            # Polars 단위 매핑
+            polars_unit_map = {
+                'm': 'm',      # 분
+                'h': 'h',      # 시간
+                'd': 'd',      # 일
+                'w': 'w',      # 주
+                'M': 'mo'      # 월 (Polars는 "mo" 사용)
+            }
+            
+            polars_unit = polars_unit_map.get(unit)
+            if polars_unit is None:
+                raise ValueError(f"Cannot convert unit '{unit}' to Polars format")
+            
+            return f"{number}{polars_unit}"
+            
+        except Exception as e:
+            raise ValueError(f"Cannot convert timeframe to Polars interval: {timeframe} - {str(e)}")
     
     @classmethod
     def create_multi_timeframe_data(
@@ -236,13 +254,15 @@ class TimeframeUtils:
         result = {}
         
         # 기본 타임프레임이 요청된 타임프레임에 포함되어 있으면 추가
-        base_tf_normalized = cls._normalize_timeframe(base_timeframe)
-        if base_tf_normalized in [cls._normalize_timeframe(tf) for tf in timeframes]:
+        base_tf_normalized = cls.normalize_timeframe(base_timeframe)
+        normalized_timeframes = [cls.normalize_timeframe(tf) for tf in timeframes]
+        
+        if base_tf_normalized in normalized_timeframes:
             result[base_tf_normalized] = base_data.sort(["symbol", "timestamp"])
         
         # 각 타임프레임별로 리샘플링
         for timeframe in timeframes:
-            normalized_tf = cls._normalize_timeframe(timeframe)
+            normalized_tf = cls.normalize_timeframe(timeframe)
             
             # 이미 처리된 기본 타임프레임은 스킵
             if normalized_tf == base_tf_normalized:
@@ -256,18 +276,19 @@ class TimeframeUtils:
                 )
                 result[normalized_tf] = resampled_data
             except ValueError as e:
+                print(f"⚠️ 타임프레임 '{timeframe}' 리샘플링 실패: {e}")
                 continue
         
         return result
     
     @classmethod
-    def get_supported_timeframes(cls) -> List[str]:
-        """지원되는 타임프레임 목록 반환
+    def get_supported_units(cls) -> List[str]:
+        """지원되는 단위 목록 반환
         
         Returns:
-            지원되는 타임프레임 리스트
+            지원되는 단위 리스트
         """
-        return list(cls.TIMEFRAME_MINUTES.keys())
+        return list(cls.UNIT_TO_MINUTES.keys())
     
     @classmethod
     def filter_valid_timeframes(cls, timeframes: List[str]) -> List[str]:
@@ -279,4 +300,76 @@ class TimeframeUtils:
         Returns:
             유효한 타임프레임 리스트
         """
-        return [tf for tf in timeframes if cls.validate_timeframe(tf)] 
+        valid_timeframes = []
+        for tf in timeframes:
+            if cls.validate_timeframe(tf):
+                normalized_tf = cls.normalize_timeframe(tf)
+                if normalized_tf not in valid_timeframes:
+                    valid_timeframes.append(normalized_tf)
+            else:
+                print(f"⚠️ 잘못된 타임프레임 무시: {tf}")
+        
+        return valid_timeframes
+    
+    @classmethod
+    def sort_timeframes_by_duration(cls, timeframes: List[str]) -> List[str]:
+        """타임프레임을 시간 순서로 정렬 (작은 것부터)
+        
+        Args:
+            timeframes: 정렬할 타임프레임 리스트
+            
+        Returns:
+            시간 순으로 정렬된 타임프레임 리스트
+        """
+        valid_timeframes = cls.filter_valid_timeframes(timeframes)
+        
+        # 시간(분)과 함께 튜플로 만들어 정렬
+        timeframe_minutes = []
+        for tf in valid_timeframes:
+            try:
+                minutes = cls.get_timeframe_minutes(tf)
+                timeframe_minutes.append((tf, minutes))
+            except ValueError:
+                continue
+        
+        # 시간 순으로 정렬
+        timeframe_minutes.sort(key=lambda x: x[1])
+        
+        return [tf for tf, _ in timeframe_minutes]
+    
+    @classmethod
+    def get_timeframe_info(cls, timeframe: str) -> Dict[str, any]:
+        """타임프레임 상세 정보 반환
+        
+        Args:
+            timeframe: 타임프레임 문자열
+            
+        Returns:
+            타임프레임 정보 딕셔너리
+        """
+        try:
+            number, unit = cls.parse_timeframe(timeframe)
+            minutes = cls.get_timeframe_minutes(timeframe)
+            
+            unit_names = {
+                'm': '분',
+                'h': '시간',
+                'd': '일',
+                'w': '주',
+                'M': '월'
+            }
+            
+            return {
+                'timeframe': timeframe,
+                'number': number,
+                'unit': unit,
+                'unit_name': unit_names.get(unit, unit),
+                'total_minutes': minutes,
+                'description': f"{number}{unit_names.get(unit, unit)}"
+            }
+        except ValueError as e:
+            return {
+                'timeframe': timeframe,
+                'error': str(e),
+                'valid': False
+            } 

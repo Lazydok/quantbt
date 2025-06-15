@@ -37,37 +37,48 @@ from quantbt import (
 
 
 class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
-    """멀티 타임프레임 SMA 전략
+    """멀티 타임프레임 SMA 전략 (동적 타임프레임 지원)
     
-    1분봉: 단기 SMA 크로스오버 신호 생성
-    5분봉: 중기 추세 확인 및 RSI 필터링
+    3분봉: 단기 SMA 크로스오버 신호 생성
+    13분봉: 중기 추세 확인 및 RSI 필터링  
+    1시간봉: 장기 추세 확인
+    4시간봉: 전체 시장 추세
     
     매수 조건:
-    - 1분봉: 가격이 SMA10 상회 + SMA10 > SMA20
-    - 5분봉: SMA5 > SMA15 (상승 추세) + RSI 30-70 구간
+    - 3분봉: 가격이 SMA10 상회 + SMA10 > SMA20
+    - 13분봉: SMA5 > SMA15 (상승 추세) + RSI 30-70 구간
+    - 1시간봉: SMA5 > SMA20 (장기 상승 추세)
     
     매도 조건:
-    - 1분봉: 가격이 SMA20 하회
-    - 5분봉: RSI > 75 (과매수) 또는 SMA5 < SMA15 (하락 추세)
+    - 3분봉: 가격이 SMA20 하회
+    - 13분봉: RSI > 75 (과매수) 또는 SMA5 < SMA15 (하락 추세)
     """
     
     def __init__(self):
         timeframe_configs = {
-            "1m": {
+            "3m": {
                 "sma_windows": [10, 20],
                 "volume_threshold": 1.2
             },
-            "5m": {
+            "13m": {
                 "sma_windows": [5, 15], 
                 "rsi_period": 14,
                 "volatility_window": 10
+            },
+            "1h": {
+                "sma_windows": [5, 20],
+                "trend_strength": 0.02
+            },
+            "4h": {
+                "sma_windows": [10, 30],
+                "market_filter": True
             }
         }
         
         super().__init__(
-            name="MultiTimeframeSMA",
+            name="MultiTimeframeSMA_Dynamic",
             timeframe_configs=timeframe_configs,
-            primary_timeframe="1m",
+            primary_timeframe="3m",
             position_size_pct=0.8,  # 80% 포지션 크기
             max_positions=1
         )
@@ -83,8 +94,8 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
         data = symbol_data.sort("timestamp")
         indicators = []
         
-        if timeframe == "1m":
-            # 1분봉: SMA + 볼륨 지표
+        if timeframe == "3m":
+            # 3분봉: SMA + 볼륨 지표
             indicators.extend([
                 pl.col("close").rolling_mean(10).alias("sma_10"),
                 pl.col("close").rolling_mean(20).alias("sma_20"),
@@ -92,13 +103,29 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
                 (pl.col("volume") / pl.col("volume").rolling_mean(20)).alias("volume_ratio")
             ])
             
-        elif timeframe == "5m":
-            # 5분봉: SMA + RSI + 변동성
+        elif timeframe == "13m":
+            # 13분봉: SMA + RSI + 변동성
             indicators.extend([
                 pl.col("close").rolling_mean(5).alias("sma_5"),
                 pl.col("close").rolling_mean(15).alias("sma_15"),
                 self.calculate_rsi(pl.col("close"), 14).alias("rsi_14"),
                 pl.col("close").rolling_std(10).alias("volatility_10")
+            ])
+            
+        elif timeframe == "1h":
+            # 1시간봉: 장기 추세 지표
+            indicators.extend([
+                pl.col("close").rolling_mean(5).alias("sma_5"),
+                pl.col("close").rolling_mean(20).alias("sma_20"),
+                pl.col("close").rolling_std(20).alias("volatility_20")
+            ])
+            
+        elif timeframe == "4h":
+            # 4시간봉: 시장 전체 추세
+            indicators.extend([
+                pl.col("close").rolling_mean(10).alias("sma_10"),
+                pl.col("close").rolling_mean(30).alias("sma_30"),
+                self.calculate_rsi(pl.col("close"), 14).alias("rsi_14")
             ])
         
         return data.with_columns(indicators)
@@ -139,22 +166,27 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
         
         orders = []
         
-        # 1분봉과 5분봉 데이터 확인
-        data_1m = multi_current_data.get("1m")
-        data_5m = multi_current_data.get("5m")
+        # 모든 타임프레임 데이터 확인
+        data_3m = multi_current_data.get("3m")
+        data_13m = multi_current_data.get("13m")
+        data_1h = multi_current_data.get("1h")
+        data_4h = multi_current_data.get("4h")
         
-        if not data_1m or not data_5m:
+        # 최소한 주요 타임프레임 데이터는 있어야 함
+        if not data_3m or not data_13m:
             return orders
         
-        symbol = data_1m.get('symbol')
+        symbol = data_3m.get('symbol')
         if not symbol:
             return orders
         
         # 멀티 타임프레임 분석
-        signal = self._analyze_multi_timeframe_signal(data_1m, data_5m, symbol)
+        signal = self._analyze_multi_timeframe_signal(
+            data_3m, data_13m, data_1h, data_4h, symbol
+        )
         
         if signal == "BUY":
-            orders.append(self._create_buy_order(symbol, data_1m))
+            orders.append(self._create_buy_order(symbol, data_3m))
         elif signal == "SELL":
             sell_order = self._create_sell_order(symbol)
             if sell_order:
@@ -164,44 +196,66 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
     
     def _analyze_multi_timeframe_signal(
         self, 
-        data_1m: Dict[str, Any], 
-        data_5m: Dict[str, Any], 
+        data_3m: Dict[str, Any], 
+        data_13m: Dict[str, Any], 
+        data_1h: Optional[Dict[str, Any]], 
+        data_4h: Optional[Dict[str, Any]], 
         symbol: str
     ) -> str:
-        """크로스 타임프레임 신호 분석"""
+        """크로스 타임프레임 신호 분석 (동적 타임프레임)"""
         
-        # 1분봉 조건 (None 값 처리)
-        price_1m = data_1m.get('close', 0) or 0
-        sma_10_1m = data_1m.get('sma_10') or 0
-        sma_20_1m = data_1m.get('sma_20') or 0
-        volume_ratio_1m = data_1m.get('volume_ratio') or 1
+        # 3분봉 조건 (None 값 처리)
+        price_3m = data_3m.get('close', 0) or 0
+        sma_10_3m = data_3m.get('sma_10') or 0
+        sma_20_3m = data_3m.get('sma_20') or 0
+        volume_ratio_3m = data_3m.get('volume_ratio') or 1
         
-        # 5분봉 조건 (None 값 처리)
-        sma_5_5m = data_5m.get('sma_5') or 0
-        sma_15_5m = data_5m.get('sma_15') or 0
-        rsi_5m = data_5m.get('rsi_14') or 50
+        # 13분봉 조건 (None 값 처리)
+        sma_5_13m = data_13m.get('sma_5') or 0
+        sma_15_13m = data_13m.get('sma_15') or 0
+        rsi_13m = data_13m.get('rsi_14') or 50
+        
+        # 1시간봉 조건 (옵션)
+        hourly_trend_bullish = True  # 기본값
+        if data_1h:
+            sma_5_1h = data_1h.get('sma_5') or 0
+            sma_20_1h = data_1h.get('sma_20') or 0
+            if sma_5_1h and sma_20_1h:
+                hourly_trend_bullish = sma_5_1h > sma_20_1h
+        
+        # 4시간봉 조건 (옵션)
+        market_filter_ok = True  # 기본값
+        if data_4h:
+            sma_10_4h = data_4h.get('sma_10') or 0
+            sma_30_4h = data_4h.get('sma_30') or 0
+            if sma_10_4h and sma_30_4h:
+                market_filter_ok = sma_10_4h > sma_30_4h
         
         # 지표가 계산되지 않은 경우 HOLD 반환
-        if not all([sma_10_1m, sma_20_1m, sma_5_5m, sma_15_5m]):
+        if not all([sma_10_3m, sma_20_3m, sma_5_13m, sma_15_13m]):
             return "HOLD"
         
         current_positions = self.get_current_positions()
         
-        # 매수 조건: 1분봉 + 5분봉 모든 조건 만족
+        # 매수 조건: 모든 타임프레임 조건 만족
         buy_conditions = [
-            price_1m > sma_10_1m,           # 1분봉 단기 상승
-            sma_10_1m > sma_20_1m,          # 1분봉 골든크로스
-            volume_ratio_1m > 1.2,          # 거래량 증가
-            sma_5_5m > sma_15_5m,           # 5분봉 상승 추세
-            30 < rsi_5m < 70,               # RSI 적정 구간
+            price_3m > sma_10_3m,           # 3분봉 단기 상승
+            sma_10_3m > sma_20_3m,          # 3분봉 골든크로스
+            volume_ratio_3m > 1.2,          # 거래량 증가
+            sma_5_13m > sma_15_13m,         # 13분봉 상승 추세
+            30 < rsi_13m < 70,              # RSI 적정 구간
+            hourly_trend_bullish,           # 1시간봉 상승 추세
+            market_filter_ok,               # 4시간봉 시장 필터
             symbol not in current_positions
         ]
         
         # 매도 조건
         sell_conditions = [
-            price_1m < sma_20_1m,           # 1분봉 지지선 이탈
-            sma_5_5m < sma_15_5m,           # 5분봉 하락 추세
-            rsi_5m > 75 or rsi_5m < 25,     # RSI 극값
+            price_3m < sma_20_3m,           # 3분봉 지지선 이탈
+            sma_5_13m < sma_15_13m,         # 13분봉 하락 추세
+            rsi_13m > 75 or rsi_13m < 25,   # RSI 극값
+            not hourly_trend_bullish,       # 1시간봉 하락 전환
+            not market_filter_ok,           # 4시간봉 시장 약세
             symbol in current_positions and current_positions[symbol] > 0
         ]
         
@@ -212,9 +266,9 @@ class MultiTimeframeSMAStrategy(MultiTimeframeTradingStrategy):
         else:
             return "HOLD"
     
-    def _create_buy_order(self, symbol: str, data_1m: Dict[str, Any]) -> Order:
+    def _create_buy_order(self, symbol: str, data_3m: Dict[str, Any]) -> Order:
         """매수 주문 생성"""
-        current_price = data_1m.get('close', 0)
+        current_price = data_3m.get('close', 0)
         portfolio_value = self.get_portfolio_value()
         quantity = self.calculate_position_size(symbol, current_price, portfolio_value)
         
@@ -250,8 +304,8 @@ config = BacktestConfig(
     symbols=["KRW-BTC"],
     start_date=datetime(2024, 1, 1),
     end_date=datetime(2024, 12, 31),  # 1주일 테스트
-    timeframes=["1m", "5m"],        # 멀티 타임프레임 설정
-    primary_timeframe="1m",         # 주요 타임프레임
+    timeframes=["3m", "13m", "1h", "4h"],     # 🚀 새로운 동적 타임프레임 테스트
+    primary_timeframe="3m",                   # 주요 타임프레임
     initial_cash=10_000_000,        # 1천만원
     commission_rate=0.001,          # 0.1% 수수료
     slippage_rate=0.0005,           # 0.05% 슬리피지

@@ -61,6 +61,8 @@ class BacktestEngine(BacktestEngineBase):
     def set_strategy(self, strategy: TradingStrategy):
         """TradingStrategy 설정"""
         self.strategy = strategy
+        if self.broker:
+            self.strategy.set_broker(self.broker)
         
     def set_broker(self, broker: SimpleBroker):
         """브로커 설정"""
@@ -1179,6 +1181,41 @@ class BacktestEngine(BacktestEngineBase):
         
         return result
     
+    def _run_async_safe(self, coro):
+        """Jupyter 노트북 호환 비동기 실행
+        
+        Args:
+            coro: 실행할 코루틴
+            
+        Returns:
+            코루틴 실행 결과
+        """
+        try:
+            # 현재 실행 중인 이벤트 루프가 있는지 확인
+            loop = asyncio.get_running_loop()
+            
+            # Jupyter 환경이면 nest_asyncio 사용
+            if _is_jupyter_environment():
+                try:
+                    nest_asyncio.apply()
+                    return asyncio.run(coro)
+                except Exception:
+                    # nest_asyncio 실패 시 ThreadPoolExecutor 사용
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, coro)
+                        return future.result()
+            else:
+                # 일반 환경에서는 새로운 스레드에서 실행
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, coro)
+                    return future.result()
+                    
+        except RuntimeError:
+            # 실행 중인 이벤트 루프가 없으면 (일반 Python 환경)
+            return asyncio.run(coro)
+
     def _load_multi_timeframe_data(self, config: BacktestConfig) -> Dict[str, pl.DataFrame]:
         """멀티 타임프레임 데이터 로딩
         
@@ -1190,7 +1227,8 @@ class BacktestEngine(BacktestEngineBase):
         """
         if hasattr(config, 'timeframes') and config.timeframes and config.is_multi_timeframe:
             # 멀티 타임프레임 데이터 로딩
-            return asyncio.run(self.data_provider.get_multi_timeframe_data(
+            # Jupyter 노트북 환경 호환성을 위한 이벤트 루프 처리
+            return self._run_async_safe(self.data_provider.get_multi_timeframe_data(
                 symbols=config.symbols,
                 start=config.start_date,
                 end=config.end_date,
