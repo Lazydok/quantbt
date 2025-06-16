@@ -79,6 +79,12 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+or
+
+```bash
+pip install git+https://github.com/lazydok/quantbt.git
+```
+
 ## ⚡ 5분 만에 시작하기: 간단한 전략 백테스팅
 
 이동평균선 두 개의 교차를 이용하는 간단한 전략을 백테스팅하는 예제입니다.
