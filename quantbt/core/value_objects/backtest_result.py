@@ -869,7 +869,7 @@ class BacktestResult:
             total_return = (1 + valid_returns).prod() - 1
             
             # 실제 백테스팅 기간을 사용하여 연간 수익률 계산
-            actual_years = self.config.duration_days / 365.25
+            actual_years = (self.config.end_date - self.config.start_date).days / 365.25
             
             # 연간 수익률: 실제 백테스팅 기간 기준으로 정확히 계산
             if actual_years > 0 and total_return > -1:  # -100% 미만 손실 방지
