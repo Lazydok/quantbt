@@ -18,67 +18,86 @@
 
 ## 2. 베이지안 최적화 과정
 
-QuantBT는 `BayesianParameterOptimizer` 클래스를 통해 베이지안 최적화 기능을 제공합니다.
+QuantBT는 `BayesianParameterOptimizer` 클래스를 통해 베이지안 최적화 기능을 통합적으로 제공합니다. Ray 클러스터 위에서 병렬로 실행되며, 사용자는 최적화할 전략과 파라미터 공간만 정의하면 됩니다.
 
-### 단계 1: 목표 함수 정의
+### 단계 1: 최적화 대상 정의 (전략 클래스, 파라미터 공간)
 
-최적화의 대상이 되는 목표 함수를 정의합니다. 이 함수는 파라미터를 인자로 받아 백테스팅을 수행하고, 최대화하려는 값(예: `sharpe_ratio`)을 반환해야 합니다. **주의: 베이지안 최적화 라이브러리는 보통 최소값을 찾도록 설계되어 있으므로, 최대화를 위해 수익률이나 샤프 지수에 -1을 곱하여 반환하는 것이 일반적입니다.**
-
-```python
-def objective_function(fast_sma, slow_sma):
-    """베이지안 최적화를 위한 목표 함수"""
-    # 파라미터 유효성 검사
-    if fast_sma >= slow_sma:
-        return -1e9 # 무효한 조합에 대해 매우 낮은 값 반환
-        
-    result = qbt.backtest(...) # 백테스팅 실행
-    
-    # 샤프 지수를 최대화하는 것이 목표
-    return result.sharpe_ratio
-```
-
-### 단계 2: 파라미터 탐색 공간 정의
-
-최적화할 각 파라미터의 탐색 범위를 정의합니다.
+먼저 최적화할 전략 클래스를 정의하고, 파라미터들의 탐색 범위를 `ParameterSpace`를 사용하여 지정합니다.
 
 ```python
-param_space = {
-    'fast_sma': (10, 50),     # 10에서 50 사이의 정수
-    'slow_sma': (50, 200)     # 50에서 200 사이의 정수
+from quantbt.core.interfaces.strategy import TradingStrategy
+from quantbt.ray.optimization.parameter_space import ParameterSpace
+
+# 1. 최적화할 전략 클래스 정의
+class SimpleSMAStrategy(TradingStrategy):
+    def __init__(self, buy_sma: int, sell_sma: int, position_size_pct: float):
+        super().__init__()
+        self.buy_sma = buy_sma
+        self.sell_sma = sell_sma
+        self.position_size_pct = position_size_pct
+    # ... (지표 계산 및 신호 생성 로직은 내부적으로 동일) ...
+
+# 2. 파라미터 탐색 공간 정의
+param_config = {
+    'buy_sma': (10, 100),            # 10에서 100 사이의 정수
+    'sell_sma': (20, 200),           # 20에서 200 사이의 정수
+    'position_size_pct': (0.5, 1.0)  # 0.5에서 1.0 사이의 실수
 }
+param_space = ParameterSpace.from_dict(param_config)
 ```
 
-### 단계 3: 최적화 실행
+### 단계 2: 최적화기 생성 및 실행
 
-`BayesianParameterOptimizer`를 사용하여 최적화를 실행합니다.
+`BayesianParameterOptimizer`에 전략 클래스, 파라미터 공간, 백테스트 설정을 전달하여 인스턴스를 생성한 후, `optimize` 메소드를 비동기적으로 호출합니다.
 
 ```python
-from quantbt.ray import BayesianParameterOptimizer
+from quantbt.ray.bayesian_parameter_optimizer import BayesianParameterOptimizer
+from quantbt.core.value_objects.backtest_config import BacktestConfig
+import asyncio
+from datetime import datetime
 
-# 최적화기 생성
+# 1. 기본 백테스트 설정
+config = BacktestConfig(
+    symbols=["KRW-BTC"],
+    start_date=datetime(2024, 1, 1),
+    end_date=datetime(2024, 12, 31),
+    timeframe="4h",
+    initial_cash=10_000_000
+)
+
+# 2. 최적화기 생성
 optimizer = BayesianParameterOptimizer(
-    objective_function,
-    param_space
+    strategy_class=SimpleSMAStrategy,
+    param_space=param_space,
+    config=config,
+    num_actors=8, # 사용할 CPU 코어 수
+    n_initial_points=10 # 초기 랜덤 탐색 횟수
 )
 
-# 최적화 실행 (초기 5회 랜덤 탐색, 25회 최적화 시도)
-best_params, all_results = optimizer.run_optimization(
-    init_points=5, 
-    n_iter=25
-)
+# 3. 최적화 비동기 실행
+async def run_optimization():
+    results = await optimizer.optimize(
+        objective_metric='sharpe_ratio', # 최적화 목표 지표
+        n_iter=100 # 총 최적화 시도 횟수
+    )
+    return results
+
+# 비동기 함수 실행 (Jupyter Notebook 등에서는 await 바로 사용 가능)
+all_results = asyncio.run(run_optimization())
 ```
 
-## 3. 결과 분석
+### 단계 3: 결과 분석
 
-최적화가 완료되면 가장 좋은 성능을 보인 파라미터와 전체 탐색 과정을 확인할 수 있습니다.
+최적화가 완료되면 `optimize` 함수는 모든 시도에 대한 결과를 담은 리스트를 반환합니다. 이 리스트를 분석하여 가장 좋은 성능을 보인 파라미터를 찾을 수 있습니다.
 
 ```python
-print("=== Best Parameters Found ===")
-print(f"Fast SMA: {best_params['fast_sma']}")
-print(f"Slow SMA: {best_params['slow_sma']}")
+# 샤프 지수가 가장 높은 결과 찾기
+best_result = max(all_results, key=lambda x: x['result'].get('sharpe_ratio', -999))
 
-# 전체 결과 데이터프레임으로 보기
-print(all_results.df)
+print("=== Best Parameters Found ===")
+print(f"Params: {best_result['params']}")
+print(f"Sharpe Ratio: {best_result['result']['sharpe_ratio']:.4f}")
+print(f"Total Return: {best_result['result']['total_return']:.4f}")
 ```
 
 베이지안 최적화는 그리드 서치에 비해 훨씬 적은 반복으로도 우수한 파라미터를 찾아낼 수 있어, 복잡한 전략의 최적화 시간을 크게 단축시켜 줍니다. 

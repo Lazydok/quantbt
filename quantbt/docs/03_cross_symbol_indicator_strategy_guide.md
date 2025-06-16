@@ -1,6 +1,6 @@
 # 튜토리얼 3: 크로스 심볼 지표 전략
 
-이번 튜토리얼에서는 한 종목의 기술적 지표를 사용하여 다른 종목의 거래 신호를 생성하는 '크로스 심볼(Cross-symbol)' 전략을 구현하는 방법을 알아봅니다. 예를 들어, 비트코인(BTC)의 시장 동향을 파악하여 이더리움(ETH)의 매매 시점을 결정하는 것과 같은 고급 전략입니다.
+이번 튜토리얼에서는 한 종목의 기술적 지표를 사용하여 다른 종목의 거래 신호를 생성하는 '크로스 심볼(Cross-symbol)' 전략을 구현하는 방법을 알아봅니다. 예를 들어, 여러 알트코인 중 변동성이 가장 높은 코인만 골라서 거래하는 것과 같은 고급 전략을 구현할 수 있습니다.
 
 > 전체 코드는 아래 Jupyter Notebook 링크에서 확인하고 직접 실행해볼 수 있습니다.
 >
@@ -8,80 +8,98 @@
 
 ## 1. 크로스 심볼 전략의 개념
 
-크로스 심볼 전략은 시장 전체의 분위기를 주도하는 자산(예: BTC)이나 특정 경제 지표를 기준으로, 변동성이 더 크거나 다른 특성을 가진 자산(예: 알트코인)을 거래하는 데 사용됩니다. 이를 통해 더 안정적이거나 선행하는 신호를 포착하여 거래의 정확도를 높일 수 있습니다.
+크로스 심볼 전략은 여러 종목의 데이터를 종합적으로 분석하여 투자 결정을 내리는 방식입니다. 시장 전체의 분위기를 주도하는 자산(예: BTC)을 기준으로 다른 자산을 거래하거나, 여러 자산 중 특정 조건을 만족하는 대상만 선택하여 거래하는 데 사용됩니다. 이를 통해 더 정교한 신호를 포착하여 거래의 효율성을 높일 수 있습니다.
 
 ## 2. 백테스팅 과정
 
-### 단계 1: 커스텀 전략 생성
+### 단계 1: 크로스 심볼 로직을 포함한 커스텀 전략 생성
 
-크로스 심볼 로직을 구현하기 위해 QuantBT의 `TradingStrategy`를 상속받아 커스텀 전략을 만듭니다.
+QuantBT의 `TradingStrategy`를 상속받아 커스텀 전략을 만듭니다. 크로스 심볼 로직은 주로 지표 계산 단계에서 구현됩니다.
 
-- **`precompute_indicators`**: 백테스팅 시작 전, 필요한 모든 종목의 지표를 미리 계산합니다.
-- **`generate_signals`**: 각 시점에서 데이터에 접근하여, 기준이 되는 종목(예: BTC)의 지표 값을 가져와 거래할 종목(예: ETH)의 주문을 생성합니다.
+- **`_compute_indicators_for_symbol`**: 백테스팅 시작 전, 각 종목에 필요한 개별 지표(예: 이동평균, 변동성)를 계산합니다.
+- **`_compute_cross_symbol_indicators`**: 모든 종목의 데이터가 합쳐진 상태에서, 종목 간 비교를 통해 새로운 지표(예: 변동성 순위)를 생성합니다. `polars`의 윈도우 함수 `over("timestamp")`가 핵심적인 역할을 합니다.
+- **`generate_signals_dict`**: 각 시점에서 데이터를 기반으로, 크로스 심볼 지표(변동성 순위)를 조건으로 사용하여 거래 주문을 생성합니다.
 
 ```python
-import quantbt as qbt
 import polars as pl
+from quantbt import TradingStrategy, Order, OrderSide, OrderType
 
-class CrossSymbolStrategy(qbt.TradingStrategy):
-    def __init__(self, btc_sma_period=50, eth_rsi_period=14):
-        self.btc_sma_period = btc_sma_period
-        self.eth_rsi_period = eth_rsi_period
+class VolatilityBasedStrategy(TradingStrategy):
+    def __init__(self, volatility_window=14, **kwargs):
+        super().__init__(**kwargs)
+        self.volatility_window = volatility_window
 
-    def precompute_indicators(self, data):
-        # BTC의 이동평균과 ETH의 RSI를 미리 계산
-        data["BTCUSDT"] = data["BTCUSDT"].add_indicator(
-            "sma", self.btc_sma_period
+    def _compute_indicators_for_symbol(self, symbol_data):
+        # 각 심볼의 이동평균과 변동성을 계산
+        data = symbol_data.sort("timestamp")
+        volatility = data["close"].pct_change().rolling_std(window_size=self.volatility_window)
+        # ... 다른 지표들 ...
+        return data.with_columns([
+            volatility.alias("volatility"),
+            # ...
+        ])
+
+    def _compute_cross_symbol_indicators(self, data: pl.DataFrame):
+        # 타임스탬프별로 모든 종목의 변동성 순위를 계산
+        return data.with_columns(
+            pl.col("volatility")
+            .rank("ordinal", descending=True)
+            .over("timestamp")
+            .alias("vol_rank")
         )
-        data["ETHUSDT"] = data["ETHUSDT"].add_indicator(
-            "rsi", self.eth_rsi_period
-        )
-        return data
 
-    def generate_signals(self, data):
+    def generate_signals_dict(self, data: dict):
         orders = []
-        
-        # 현재 시점의 BTC SMA와 ETH 가격, RSI 값 가져오기
-        btc_sma = data.get_indicator_value("BTCUSDT", "sma")
-        eth_price = data.get_price("ETHUSDT", "close")
-        eth_rsi = data.get_indicator_value("ETHUSDT", "rsi")
-
-        # 매수 조건: BTC가 장기 상승 추세(SMA 상향)이고 ETH가 과매도 상태일 때
-        if eth_price > btc_sma and eth_rsi < 30:
-            orders.append(self.create_market_order("ETHUSDT", "buy"))
-
-        # 매도 조건: ETH가 과매수 상태일 때
-        elif eth_rsi > 70:
-            orders.append(self.create_market_order("ETHUSDT", "sell"))
-            
+        # 변동성 순위가 1위인 종목만 거래
+        if data.get('vol_rank') == 1:
+            # ... 매수/매도 조건 ...
+            # if condition:
+            #     orders.append(Order(...))
         return orders
 ```
 
 ### 단계 2: 백테스팅 실행
 
-생성한 커스텀 전략을 사용하여 백테스팅을 실행합니다. 데이터는 두 종목(`BTCUSDT`, `ETHUSDT`)을 모두 포함해야 합니다.
+생성한 커스텀 전략을 사용하여 백테스팅을 실행합니다. `BacktestConfig`에 분석할 모든 종목(`"KRW-BTC"`, `"KRW-ETH"`)을 지정합니다.
 
 ```python
-# 데이터 로드
-data = qbt.load_data(symbols=["BTCUSDT", "ETHUSDT"])
+from datetime import datetime
+from quantbt import BacktestEngine, BacktestConfig, UpbitDataProvider, SimpleBroker
 
-# 전략 인스턴스화 및 백테스팅
-strategy = CrossSymbolStrategy()
-result = qbt.backtest(
-    strategy=strategy,
-    ohlcv=data,
-    symbols=["BTCUSDT", "ETHUSDT"],
-    # ... other parameters
+# 1. 백테스팅 설정
+config = BacktestConfig(
+    symbols=["KRW-BTC", "KRW-ETH"],
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    timeframe="1d",
+    initial_cash=10000000,
+    commission_rate=0.001
 )
+
+# 2. 구성 요소 초기화
+data_provider = UpbitDataProvider()
+strategy = VolatilityBasedStrategy() # 위에서 정의한 전략
+broker = SimpleBroker(initial_cash=config.initial_cash)
+
+# 3. 백테스트 엔진 설정 및 실행
+engine = BacktestEngine()
+engine.set_strategy(strategy)
+engine.set_data_provider(data_provider)
+engine.set_broker(broker)
+
+result = engine.run(config)
 ```
 
 ## 3. 결과 분석
 
-결과 분석은 일반적인 백테스팅과 동일하지만, 거래는 `ETHUSDT`에 대해서만 발생했음을 확인할 수 있습니다.
+결과 분석은 일반적인 백테스팅과 동일합니다. `result.trades`를 통해 어떤 종목이 어떤 시점에 거래되었는지 확인할 수 있습니다.
 
 ```python
-result.stats()
-result.plot()
+# 전체 포트폴리오 성과 요약
+result.print_summary()
+
+# 포트폴리오 수익 곡선 시각화
+result.plot_portfolio_performance()
 
 # 거래 내역 확인
 print(result.trades)

@@ -12,39 +12,98 @@
 
 ## 2. 백테스팅 과정
 
-### 단계 1: 데이터 불러오기
+멀티 심볼 백테스팅은 단일 심볼 백테스팅과 매우 유사한 구조를 가집니다. 가장 큰 차이점은 `BacktestConfig`에 여러 종목의 심볼을 리스트로 전달하는 것입니다.
 
-백테스팅에 사용할 여러 종목의 데이터를 로드합니다. `load_data` 함수에 종목 리스트를 전달하면 됩니다.
+### 단계 1: 필요한 모듈 임포트
+
+백테스팅에 필요한 주요 클래스들을 `quantbt` 라이브러리에서 직접 임포트합니다.
 
 ```python
-import quantbt as qbt
-
-# BTC와 ETH 데이터를 동시에 로드
-data = qbt.load_data(
-    symbols=["BTCUSDT", "ETHUSDT"],
-    timeframe="1h"
+from datetime import datetime
+from quantbt import (
+    BacktestEngine,
+    BacktestConfig,
+    UpbitDataProvider,
+    SimpleBroker,
+    TradingStrategy,
+    Order, OrderSide, OrderType
 )
 ```
 
-### 단계 2: 멀티 심볼 전략 설정
+### 단계 2: 멀티 심볼 전략 정의
 
-전략은 각 심볼에 대해 독립적으로 실행될 수 있도록 설계되어야 합니다. `backtest` 함수에 종목 리스트를 전달하여 멀티 심볼 백테스팅을 활성화합니다.
+여러 종목을 처리할 수 있는 전략을 정의합니다. 기본 `TradingStrategy`를 상속받아 각 심볼 데이터에 대해 독립적으로 신호를 생성하도록 구현할 수 있습니다. 이 예제에서는 간단한 이동평균 교차 전략을 사용합니다.
 
 ```python
-from quantbt.strategies import RSIStrategy
+class MultiSymbolSMAStrategy(TradingStrategy):
+    def __init__(self, buy_sma: int = 15, sell_sma: int = 30):
+        super().__init__()
+        self.buy_sma = buy_sma
+        self.sell_sma = sell_sma
 
-# 각 종목에 동일한 RSI 전략 적용
-strategy = RSIStrategy(rsi_period=14, oversold=30, overbought=70)
+    def _compute_indicators_for_symbol(self, symbol_data):
+        data = symbol_data.sort("timestamp")
+        buy_sma = self.calculate_sma(data["close"], self.buy_sma)
+        sell_sma = self.calculate_sma(data["close"], self.sell_sma)
+        return data.with_columns([
+            buy_sma.alias(f"sma_{self.buy_sma}"),
+            sell_sma.alias(f"sma_{self.sell_sma}")
+        ])
 
-# 백테스팅 실행
-result = qbt.backtest(
-    strategy=strategy,
-    ohlcv=data,
-    symbols=["BTCUSDT", "ETHUSDT"], # 대상 심볼 지정
-    start_date="2023-01-01",
-    end_date="2023-12-31",
+    def generate_signals_dict(self, current_data: dict):
+        orders = []
+        symbol = current_data['symbol']
+        current_price = current_data['close']
+        buy_sma = current_data.get(f'sma_{self.buy_sma}')
+        sell_sma = current_data.get(f'sma_{self.sell_sma}')
+
+        if buy_sma is None or sell_sma is None:
+            return orders
+
+        current_positions = self.get_current_positions()
+        
+        # 각 종목에 대해 독립적으로 매매 신호 생성
+        if current_price > buy_sma and symbol not in current_positions:
+            # ... 매수 주문 로직 ...
+        elif current_price < sell_sma and symbol in current_positions:
+            # ... 매도 주문 로직 ...
+            
+        return orders
+```
+
+### 단계 3: 백테스팅 설정 및 실행
+
+`BacktestConfig`의 `symbols` 속성에 `["KRW-BTC", "KRW-ETH"]`와 같이 원하는 종목의 리스트를 전달합니다.
+
+```python
+# 1. 데이터 프로바이더 설정
+data_provider = UpbitDataProvider()
+
+# 2. 백테스팅 설정 (BTC와 ETH 동시)
+config = BacktestConfig(
+    symbols=["KRW-BTC", "KRW-ETH"],
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    timeframe="1d",
     initial_cash=10000,
+    commission_rate=0.001,
+    slippage_rate=0.0
 )
+
+# 3. 전략 및 브로커 초기화
+strategy = MultiSymbolSMAStrategy(buy_sma=10, sell_sma=30)
+broker = SimpleBroker(
+    initial_cash=config.initial_cash,
+    commission_rate=config.commission_rate
+)
+
+# 4. 백테스트 엔진 실행
+engine = BacktestEngine()
+engine.set_strategy(strategy)
+engine.set_data_provider(data_provider)
+engine.set_broker(broker)
+
+result = engine.run(config)
 ```
 
 QuantBT 엔진은 루프를 돌며 각 시점의 데이터를 모든 종목에 대해 전략에 전달하고, 생성된 주문을 처리합니다.
@@ -54,13 +113,15 @@ QuantBT 엔진은 루프를 돌며 각 시점의 데이터를 모든 종목에 �
 백테스팅 결과에는 포트폴리오 전체의 성과와 각 종목별 성과가 모두 포함됩니다.
 
 ```python
+import polars as pl
+
 # 포트폴리오 전체의 종합 성과
-result.stats()
-result.plot()
+result.print_summary()
+result.plot_portfolio_performance()
 
 # 개별 종목의 성과 분석
-btc_trades = result.trades.filter(pl.col("symbol") == "BTCUSDT")
-eth_trades = result.trades.filter(pl.col("symbol") == "ETHUSDT")
+btc_trades = result.trades.filter(pl.col("symbol") == "KRW-BTC")
+eth_trades = result.trades.filter(pl.col("symbol") == "KRW-ETH")
 
 print("=== BTC Trades ===")
 print(btc_trades)
