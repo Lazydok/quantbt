@@ -17,39 +17,67 @@
 
 ### 단계 1: 필요한 모듈 임포트
 
-백테스팅에 필요한 주요 클래스들을 임포트합니다.
+백테스팅에 필요한 주요 클래스들을 `quantbt` 라이브러리에서 직접 임포트합니다.
 
 ```python
-import quantbt as qbt
-from quantbt.strategies import SMAStrategy
 from datetime import datetime
-```
-
-### 단계 2: 데이터 불러오기
-
-백테스팅에 사용할 데이터를 로드합니다. 여기서는 예제 CSV 파일을 사용합니다.
-
-```python
-ohlcv = qbt.load_data("BTCUSDT") 
-```
-
-### 단계 3: 전략 및 백테스트 설정
-
-사용할 전략을 생성하고, 백테스팅 기간, 초기 자본금 등 기본 설정을 구성합니다.
-
-```python
-# 이동평균 교차 전략 생성
-strategy = SMAStrategy(fast_sma=10, slow_sma=30)
-
-# 백테스팅 실행
-result = qbt.backtest(
-    strategy=strategy,
-    ohlcv=ohlcv,
-    start_date="2023-01-01",
-    end_date="2023-12-31",
-    initial_cash=10000,
-    commission=0.001
+from quantbt import (
+    BacktestEngine,
+    BacktestConfig,
+    UpbitDataProvider,
+    SimpleBroker,
+    SimpleSMAStrategy,
 )
+```
+
+### 단계 2: 백테스팅 설정 정의
+
+`BacktestConfig`를 사용하여 백테스팅의 기본 조건을 설정합니다. 여기에는 분석할 종목, 기간, 타임프레임, 초기 자본금, 수수료 및 슬리피지 비율 등이 포함됩니다.
+
+```python
+config = BacktestConfig(
+    symbols=["KRW-BTC"],
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    timeframe="1d",
+    initial_cash=10000,
+    commission_rate=0.001,
+    slippage_rate=0.0, # 슬리피지 비율
+    save_portfolio_history=True,
+)
+```
+
+### 단계 3: 구성 요소 초기화
+
+백테스팅에 필요한 각 구성 요소(데이터 프로바이더, 전략, 브로커)를 초기화합니다.
+
+```python
+# 데이터 프로바이더 설정 (업비트 데이터 사용)
+data_provider = UpbitDataProvider()
+
+# 전략 선택 (단순 이동평균 교차 전략)
+# 10일 이동평균이 30일 이동평균을 상향 돌파하면 매수, 하향 돌파하면 매도합니다.
+strategy = SimpleSMAStrategy(buy_sma=10, sell_sma=30)
+
+# 브로커 설정
+broker = SimpleBroker(
+    initial_cash=config.initial_cash,
+    commission_rate=config.commission_rate,
+)
+```
+
+### 단계 4: 백테스트 엔진 실행
+
+`BacktestEngine`을 생성하고, 위에서 만든 구성 요소들을 설정한 뒤, `run` 메소드를 호출하여 백테스팅을 실행합니다.
+
+```python
+# 백테스팅 엔진 설정 및 실행
+engine = BacktestEngine()
+engine.set_strategy(strategy)
+engine.set_data_provider(data_provider)
+engine.set_broker(broker)
+
+result = engine.run(config)
 ```
 
 ## 3. 결과 분석
@@ -58,10 +86,10 @@ result = qbt.backtest(
 
 ```python
 # 요약 통계 출력
-result.stats()
+result.print_summary()
 
-# 수익 곡선 및 주요 지표 시각화
-result.plot()
+# 포트폴리오 성과 시각화 (Jupyter Notebook 환경에서 실행 권장)
+result.plot_portfolio_performance()
 ```
 
 ### 주요 성능 지표
@@ -71,4 +99,4 @@ result.plot()
 - **Max Drawdown**: 최대 낙폭
 - **Win Rate**: 거래 승률
 
-이 가이드를 통해 QuantBT의 기본적인 사용 흐름을 파악하셨기를 바랍니다. 다음 튜토리얼에서는 더 복잡한 멀티 심볼 전략을 다루겠습니다. 
+이 가이드를 통해 QuantBT의 기본적인 사용 흐름을 파악하셨기를 바랍니다. 다음 튜토리얼에서는 더 복잡한 멀티 심볼 전략을 다루겠습니다.

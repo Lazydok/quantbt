@@ -12,7 +12,7 @@
 - **🚀 고성능 백테스팅 엔진**: Rust 기반의 `Polars` 데이터프레임을 활용하여 대규모 시계열 데이터를 매우 빠른 속도로 처리합니다.
 - **✨ 유연한 전략 구현**: 단일 종목, 멀티 심볼, 크로스 심볼, 멀티 타임프레임 등 다양한 형태의 전략을 손쉽게 구현할 수 있습니다.
 - **🛠️ 강력한 최적화 도구**: 그리드 서치부터 베이지안 최적화까지, 최첨단 파라미터 최적화 기법을 `Ray`를 통한 병렬 처리로 빠르게 실행합니다.
-- **📈 직관적인 결과 분석**: 백테스팅 결과를 담은 리포트와 시각화 차트를 통해 전략의 성과를 다각도로 분석하고 인사이트를 얻을 수 있습니다.
+- **📈 직관적인 결과 분석**: 백테스팅 결과를 담은 리포트와 **다채로운 시각화 차트**를 통해 전략의 성과를 다각도로 분석하고 깊이 있는 인사이트를 얻을 수 있습니다.
 - **🔌 확장 가능한 아키텍처**: 데이터 소스, 리스크 관리, 포트폴리오 구성 등 모든 요소를 사용자가 직접 정의하고 확장할 수 있도록 설계되었습니다.
 - **💡 룩어헤드 편향 방지**: 각 시점에서는 과거와 현재 데이터만 접근할 수 있도록 설계되어 미래 데이터를 참조하는 실수를 원천적으로 방지합니다.
 
@@ -84,29 +84,62 @@ pip install -e .
 이동평균선 두 개의 교차를 이용하는 간단한 전략을 백테스팅하는 예제입니다.
 
 ```python
-import quantbt as qbt
-from quantbt.strategies import SMAStrategy
-
-# 1. 데이터 준비: 비트코인 1일봉 데이터를 불러옵니다.
-ohlcv = qbt.load_data("BTCUSDT", timeframe="1d")
-
-# 2. 전략 선택: 단기(10일) 이평선과 장기(30일) 이평선 교차 전략을 사용합니다.
-strategy = SMAStrategy(fast_sma=10, slow_sma=30)
-
-# 3. 백테스팅 실행: 2023년 데이터로 백테스팅을 수행합니다.
-result = qbt.backtest(
-    strategy=strategy,
-    ohlcv=ohlcv,
-    start_date="2023-01-01",
-    end_date="2023-12-31",
-    initial_cash=10000,
-    commission=0.001
+from datetime import datetime
+from quantbt import (
+    BacktestEngine,
+    BacktestConfig,
+    UpbitDataProvider,
+    SimpleBroker,
+    SimpleSMAStrategy,
 )
 
-# 4. 결과 확인: 주요 성과 지표와 자산 곡선 차트를 확인합니다.
-print(result.stats)
-result.plot()
+# 1. 데이터 프로바이더 설정
+data_provider = UpbitDataProvider()
+
+# 2. 백테스팅 설정
+config = BacktestConfig(
+    symbols=["KRW-BTC"],
+    start_date=datetime(2023, 1, 1),
+    end_date=datetime(2023, 12, 31),
+    timeframe="1d",
+    initial_cash=10000,
+    commission_rate=0.001,
+    slippage_rate=0.0,
+    save_portfolio_history=True,
+)
+
+# 3. 전략 선택
+strategy = SimpleSMAStrategy(buy_sma=10, sell_sma=30)
+
+# 4. 브로커 설정
+broker = SimpleBroker(
+    initial_cash=config.initial_cash,
+    commission_rate=config.commission_rate,
+)
+
+# 5. 백테스팅 엔진 설정 및 실행
+engine = BacktestEngine()
+engine.set_strategy(strategy)
+engine.set_data_provider(data_provider)
+engine.set_broker(broker)
+
+result = engine.run(config)
+
+# 6. 결과 확인
+result.print_summary()
 ```
+
+## 📊 풍부한 시각화
+
+QuantBT는 백테스팅 결과를 효과적으로 분석할 수 있도록 다양한 시각화 차트를 제공합니다. 자산 곡선, 드로우다운, 거래 내역 등 복잡한 데이터를 직관적으로 파악하고 전략에 대한 깊이 있는 인사이트를 얻으세요.
+
+| 자산 곡선 및 주요 지표 | 수익률 분포도 |
+| :---: | :---: |
+| ![Equity Curve](./imgs/01_1.png) | ![수익률분포](./imgs/01_2.png) |
+
+| 월별 수익률 히트맵 | 전략 성과 지표 |
+| :---: | :---: |
+| ![수익률 히트맵](./imgs/01_3.png) | ![전략 성과지표](./imgs/01_4.png) |
 
 ## 📚 튜토리얼 및 가이드
 
