@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "quantbt"
 version = "0.1.0"
-description = "고성능 퀀트 트레이딩 백테스팅 엔진"
+description = "퀀트 트레이딩 백테스팅 엔진"
 readme = "README.md"
 license = "MIT"
 authors = [
