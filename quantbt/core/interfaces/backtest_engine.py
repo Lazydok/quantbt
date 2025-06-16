@@ -98,18 +98,20 @@ class BacktestEngineBase(ABC):
             except Exception as e:
                 pass  # 콜백 에러는 조용히 무시
     
-    def create_progress_bar(self, total: int, desc: str = "Processing") -> tqdm:
+    def create_progress_bar(self, total: int, desc: str = "Processing", disable: bool = False) -> tqdm:
         """tqdm 진행률 바 생성
         
         Args:
             total: 전체 항목 수
             desc: 진행률 바 설명
+            disable: 진행률 바 비활성화 여부
             
         Returns:
             tqdm 진행률 바 객체
         """
         return tqdm(total=total, desc=desc, unit="item", 
-                   bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]')
+                   bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+                   disable=disable)
     
     def update_progress_bar(self, pbar: tqdm, message: str = "") -> None:
         """tqdm 진행률 바 업데이트 및 콜백 알림
@@ -119,9 +121,13 @@ class BacktestEngineBase(ABC):
             message: 추가 메시지
         """
         pbar.update(1)
+        if message:
+            pbar.set_description_str(message)
+        
         if pbar.total and pbar.total > 0:
             progress = pbar.n / pbar.total
-            self._notify_progress(progress, message or pbar.desc)
+            current_desc = message if message else ""
+            self._notify_progress(progress, current_desc)
     
     def _validate_components(self) -> None:
         """컴포넌트 유효성 검증"""

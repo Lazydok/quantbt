@@ -334,7 +334,8 @@ class BacktestEngine(BacktestEngineBase):
     def _run_streaming_backtest_loop(
         self, 
         config: BacktestConfig, 
-        enriched_df: pl.DataFrame
+        enriched_df: pl.DataFrame,
+        show_progress: bool
     ) -> List[Dict[str, Any]]:
         """스트리밍 백테스팅 루프 - DataFrame 행별 순차 처리
         
@@ -343,6 +344,7 @@ class BacktestEngine(BacktestEngineBase):
         Args:
             config: 백테스팅 설정
             enriched_df: 지표가 계산된 Polars DataFrame
+            show_progress: 진행률 바 표시 여부 (기본값: True)
             
         Returns:
             거래 정보 리스트
@@ -354,9 +356,7 @@ class BacktestEngine(BacktestEngineBase):
         self._portfolio_equity_history = {}
         
         # 프로그레스바 생성
-        pbar = None
-        if config.save_portfolio_history:
-            pbar = self.create_progress_bar(len(enriched_df), "백테스팅 진행")
+        pbar = self.create_progress_bar(len(enriched_df), "백테스팅 진행", disable=not show_progress)
         
         try:
             # DataFrame 스트리밍 처리
@@ -389,13 +389,10 @@ class BacktestEngine(BacktestEngineBase):
                 self._calculate_and_store_portfolio_equity(row_data, config)
                 
                 # 진행상황 업데이트
-                if pbar is not None:
-                    timestamp = row_data.get('timestamp', 'N/A')
-                    self.update_progress_bar(pbar, f"처리중... {i+1}/{len(enriched_df)} ({timestamp})")
+                self.update_progress_bar(pbar, f"처리중... {i+1}/{len(enriched_df)}")
         
         finally:
-            if pbar is not None:
-                pbar.close()
+            pbar.close()
         
         # 남은 대기 주문 처리
         if len(enriched_df) > 0:
@@ -1116,14 +1113,15 @@ class BacktestEngine(BacktestEngineBase):
             }
         )
     
-    def _execute_backtest(self, config: BacktestConfig) -> BacktestResult:
+    def _execute_backtest(self, config: BacktestConfig, show_progress: bool) -> BacktestResult:
         """백테스팅 실행
         
         Args:
             config: 백테스팅 설정
+            show_progress: 진행률 바 표시 여부 (기본값: True)
             
         Returns:
-            백테스팅 결과
+            백테스트 결과
         """
         if not self.strategy:
             raise ValueError("전략이 설정되지 않았습니다")
@@ -1154,7 +1152,7 @@ class BacktestEngine(BacktestEngineBase):
         
         # 3단계: 스트리밍 백테스트 실행
         backtest_start = time.time()
-        trades = self._run_streaming_backtest_loop(config, enriched_df)
+        trades = self._run_streaming_backtest_loop(config, enriched_df, show_progress)
         backtest_time = time.time() - backtest_start
         
         # 4단계: 결과 생성
@@ -1217,34 +1215,34 @@ class BacktestEngine(BacktestEngineBase):
             return asyncio.run(coro)
 
     def _load_multi_timeframe_data(self, config: BacktestConfig) -> Dict[str, pl.DataFrame]:
-        """멀티 타임프레임 데이터 로딩
+        """멀티 타임프레임 데이터 로딩 (전략 기반)"""
         
-        Args:
-            config: 백테스팅 설정 (timeframes 포함)
+        all_data = {}
+        # 비동기적으로 모든 타임프레임 데이터 로딩
+        async def load_all():
+            tasks = []
+            for tf in self.strategy.available_timeframes:
+                task = self.data_provider.get_data(
+                    config.symbols,
+                    config.start_date,
+                    config.end_date,
+                    tf
+                )
+                tasks.append(task)
             
-        Returns:
-            타임프레임별 데이터 딕셔너리
-        """
-        if hasattr(config, 'timeframes') and config.timeframes and config.is_multi_timeframe:
-            # 멀티 타임프레임 데이터 로딩
-            # Jupyter 노트북 환경 호환성을 위한 이벤트 루프 처리
-            return self._run_async_safe(self.data_provider.get_multi_timeframe_data(
-                symbols=config.symbols,
-                start=config.start_date,
-                end=config.end_date,
-                timeframes=config.timeframes,
-                base_timeframe=getattr(config, 'primary_timeframe', config.timeframes[0])
-            ))
-        else:
-            # 하위 호환성: 단일 타임프레임
-            single_data = self._load_raw_data_as_polars(config)
-            timeframe_key = getattr(config, 'primary_timeframe', config.timeframe)
-            return {timeframe_key: single_data}
+            results = await asyncio.gather(*tasks)
+            
+            for tf, df in zip(self.strategy.available_timeframes, results):
+                all_data[tf] = df
+
+        self._run_async_safe(load_all())
+        return all_data
     
     def _run_multi_timeframe_backtest_loop(
         self, 
         config: BacktestConfig,
-        enriched_multi_data: Dict[str, pl.DataFrame]
+        enriched_multi_data: Dict[str, pl.DataFrame],
+        show_progress: bool
     ) -> List[Dict[str, Any]]:
         """멀티 타임프레임 스트리밍 백테스트 루프 (인덱스 기반 최적화)
         
@@ -1254,6 +1252,7 @@ class BacktestEngine(BacktestEngineBase):
         Args:
             config: 백테스팅 설정
             enriched_multi_data: 타임프레임별 지표가 계산된 데이터
+            show_progress: 진행률 바 표시 여부 (기본값: True)
             
         Returns:
             거래 정보 리스트
@@ -1270,9 +1269,7 @@ class BacktestEngine(BacktestEngineBase):
         self._initialize_multi_timeframe_indices(enriched_multi_data)
         
         # 프로그레스바 생성
-        pbar = None
-        if config.save_portfolio_history:
-            pbar = self.create_progress_bar(len(primary_df), "멀티 타임프레임 백테스팅 진행")
+        pbar = self.create_progress_bar(len(primary_df), "멀티 타임프레임 백테스팅 진행", disable=not show_progress)
         
         try:
             for i, primary_row in enumerate(primary_df.iter_rows(named=True)):
@@ -1310,12 +1307,10 @@ class BacktestEngine(BacktestEngineBase):
                 self._calculate_and_store_portfolio_equity(primary_row, config)
                 
                 # 프로그레스 업데이트
-                if pbar:
-                    pbar.update(1)
+                self.update_progress_bar(pbar)
         
         finally:
-            if pbar:
-                pbar.close()
+            pbar.close()
         
         return trades
     
@@ -1411,19 +1406,8 @@ class BacktestEngine(BacktestEngineBase):
                 
         return result
     
-
-    
-
-    
-    def _execute_multi_timeframe_backtest(self, config: BacktestConfig) -> BacktestResult:
-        """멀티 타임프레임 백테스팅 실행
-        
-        Args:
-            config: 백테스팅 설정
-            
-        Returns:
-            백테스팅 결과
-        """
+    def _execute_multi_timeframe_backtest(self, config: BacktestConfig, show_progress: bool) -> BacktestResult:
+        """멀티 타임프레임 백테스트 실행"""
         if not self.strategy:
             raise ValueError("전략이 설정되지 않았습니다")
         if not self.broker:
@@ -1446,15 +1430,15 @@ class BacktestEngine(BacktestEngineBase):
         data_load_start = time.time()
         multi_data = self._load_multi_timeframe_data(config)
         data_load_time = time.time() - data_load_start
-        
+
         # 2단계: 각 타임프레임별 지표 계산
         indicator_start = time.time()
         enriched_multi_data = self.strategy.precompute_indicators_multi_timeframe(multi_data)
         indicator_time = time.time() - indicator_start
-        
+
         # 3단계: 멀티 타임프레임 백테스트 루프 실행
         backtest_start = time.time()
-        trades = self._run_multi_timeframe_backtest_loop(config, enriched_multi_data)
+        trades = self._run_multi_timeframe_backtest_loop(config, enriched_multi_data, show_progress)
         backtest_time = time.time() - backtest_start
         
         # 4단계: 결과 생성
@@ -1494,23 +1478,23 @@ class BacktestEngine(BacktestEngineBase):
         self._cached_market_data = None
         self._cached_daily_market_data = None
     
-    def run(self, config: BacktestConfig) -> BacktestResult:
+    def run(self, config: BacktestConfig, show_progress: bool = True) -> BacktestResult:
         """백테스팅 실행 - 설정 기반 멀티/단일 타임프레임 자동 감지
         
         Args:
             config: 백테스팅 설정
+            show_progress: 진행률 바 표시 여부 (기본값: True)
             
         Returns:
-            백테스팅 결과
+            백테스트 결과
         """
         try:
-            # 설정 기반 자동 감지: timeframes가 2개 이상이면 멀티 타임프레임
-            if self._is_multi_timeframe_config(config):
-                return self._execute_multi_timeframe_backtest(config)
+            # 전략 유형에 따라 적절한 백테스트 실행
+            if isinstance(self.strategy, MultiTimeframeTradingStrategy):
+                return self._execute_multi_timeframe_backtest(config, show_progress)
             else:
-                return self._execute_backtest(config)
+                return self._execute_backtest(config, show_progress)
         finally:
-            # 백테스팅 완료 후 리소스 정리
             self.cleanup()
     
     def _is_multi_timeframe_config(self, config: BacktestConfig) -> bool:

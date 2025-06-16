@@ -1,496 +1,154 @@
-# QuantBT - 퀀트 트레이딩 백테스팅 엔진
+# QuantBT: 파이썬 기반 퀀트 트레이딩 백테스팅 프레임워크
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-QuantBT는 **효율적인 지표 사전 계산 기반**의 퀀트 트레이딩 백테스팅 엔진입니다. 클린 아키텍처 원칙을 따라 설계되었으며, 단일 심볼부터 복잡한 멀티심볼, 멀티타임프레임 전략까지 모두 지원합니다.
+**QuantBT**는 트레이딩 아이디어를 빠르고 효율적으로 검증하고, 전략을 최적화하며, 실제 시장에 적용할 수 있도록 설계된 **이벤트 기반(Event-Driven) 백테스팅 프레임워크**입니다.
 
-## 🎯 주요 특징
+단순한 전략부터 여러 자산과 시간대를 아우르는 복잡한 포트폴리오 전략까지, QuantBT는 명료한 코드와 강력한 성능으로 여러분의 퀀트 트레이딩 연구 개발을 가속화합니다.
 
-- **지표 사전 계산**: 백테스팅 시작 전 모든 지표를 미리 계산하여 성능 최적화
-- **단순 신호 생성**: 백테스팅 중에는 계산된 지표값과 단순 비교로 빠른 신호 생성
-- **룩어헤드 바이어스 방지**: 각 시점에서 과거 데이터만 접근 가능한 누적 데이터 구조
-- **실시간 데이터 지원**: 업비트 API를 통한 174개 암호화폐 실시간 데이터 연동 🆕
-- **모듈화된 설계**: 각 컴포넌트가 독립적으로 교체 가능
-- **비동기 처리**: 대용량 데이터 처리를 위한 효율적인 비동기 아키텍처
-- **확장 가능성**: 새로운 전략, 데이터 소스, 브로커 쉽게 추가 가능
-- **성능 최적화**: Polars 기반 고속 데이터 처리
+## 🚀 주요 특징
+
+- **🚀 고성능 백테스팅 엔진**: Rust 기반의 `Polars` 데이터프레임을 활용하여 대규모 시계열 데이터를 매우 빠른 속도로 처리합니다.
+- **✨ 유연한 전략 구현**: 단일 종목, 멀티 심볼, 크로스 심볼, 멀티 타임프레임 등 다양한 형태의 전략을 손쉽게 구현할 수 있습니다.
+- **🛠️ 강력한 최적화 도구**: 그리드 서치부터 베이지안 최적화까지, 최첨단 파라미터 최적화 기법을 `Ray`를 통한 병렬 처리로 빠르게 실행합니다.
+- **📈 직관적인 결과 분석**: 백테스팅 결과를 담은 리포트와 시각화 차트를 통해 전략의 성과를 다각도로 분석하고 인사이트를 얻을 수 있습니다.
+- **🔌 확장 가능한 아키텍처**: 데이터 소스, 리스크 관리, 포트폴리오 구성 등 모든 요소를 사용자가 직접 정의하고 확장할 수 있도록 설계되었습니다.
+- **💡 룩어헤드 편향 방지**: 각 시점에서는 과거와 현재 데이터만 접근할 수 있도록 설계되어 미래 데이터를 참조하는 실수를 원천적으로 방지합니다.
 
 ## 🏗️ 시스템 아키텍처
 
 ```mermaid
-graph TB
-    subgraph "데이터 계층"
-        DP[Data Provider<br/>IDataProvider]
-        CSV[CSV Data Provider<br/>CSVDataProvider]
-        UB[Upbit Data Provider<br/>UpbitDataProvider]
-        CSV --> DP
-        UB --> DP
-    end
-    
-    subgraph "전략 계층"
-        ST[Strategy<br/>TradingStrategy]
-        SMA[SMA Cross Strategy]
-        RSI[RSI Strategy]
-        BH[Buy & Hold Strategy]
-        SMA --> ST
-        RSI --> ST
-        BH --> ST
-    end
-    
-    subgraph "실행 엔진 계층"
-        BE[Backtest Engine<br/>IBacktestEngine]
-        SE[Simple Engine<br/>SimpleBacktestEngine]
-        SE --> BE
-    end
-    
-    subgraph "브로커 계층"
-        BR[Broker<br/>IBroker]
-        PT[Portfolio]
-        OR[Order Execution]
-        BR --> PT
-        BR --> OR
-    end
-    
-    DP --> SE
-    ST --> SE
-    BR --> SE
-    
-    classDef dataClass fill:#e1f5fe
-    classDef strategyClass fill:#f3e5f5
-    classDef engineClass fill:#e8f5e8
-    classDef brokerClass fill:#fff3e0
-    
-    class DP,CSV,UB dataClass
-    class ST,SMA,RSI,BH strategyClass
-    class BE,SE engineClass
-    class BR,PT,OR brokerClass
-```
-
-## 🔄 기본 데이터 처리 흐름
-
-```mermaid
-sequenceDiagram
-    participant Engine as Backtest Engine
-    participant DataProvider as Data Provider
-    participant Strategy as Strategy
-    participant Broker as Broker
-    
-    Note over Engine: 백테스팅 시작
-    
-    Engine->>DataProvider: 원시 OHLCV 데이터 요청<br/>symbol, start/end 날짜
-    
-    DataProvider-->>Engine: OHLCV DataFrame 반환
-    
-    Engine->>Strategy: precompute_indicators()<br/>지표 사전 계산 요청
-    
-    Strategy->>Strategy: 기술적 지표 계산<br/>(SMA, RSI 등)
-    
-    Strategy-->>Engine: 지표가 포함된<br/>enriched DataFrame
-    
-    Engine->>Strategy: initialize(context)<br/>전략 초기화
-    
-    loop 각 시점별 처리
-        Engine->>Engine: 현재 시점까지의<br/>누적 데이터 생성
-        
-        Engine->>Broker: update_market_data()<br/>현재 시점 마켓데이터
-        
-        Engine->>Strategy: on_data(batch)<br/>MarketDataBatch 전달
-        
-        Strategy->>Strategy: 신호 생성<br/>지표값 단순 비교
-        
-        Strategy-->>Engine: 주문 리스트 반환
-        
-        Engine->>Broker: submit_order(order)
-        Broker-->>Engine: 체결 결과
-        
-        alt 주문 체결시
-            Engine->>Strategy: on_order_fill(trade)
+graph TD
+    subgraph "입력 계층 (Input Layer)"
+        direction LR
+        subgraph "데이터 소스"
+            DP[Data Provider]
+        end
+        subgraph "전략 및 설정"
+            ST[Strategy]
+            CF[Configuration]
         end
     end
+
+    subgraph "코어 엔진 (Core Engine)"
+        direction TB
+        BE[Backtest Engine]
+        EV[Event Queue]
+        BR[Broker]
+        PM[Portfolio Manager]
+        
+        BE --"이벤트 생성"--> EV
+        EV --"이벤트 전달"--> ST
+        EV --"이벤트 전달"--> BR
+        BR --"포지션 업데이트"--> PM
+    end
+
+    subgraph "분석 및 출력 계층 (Analysis & Output)"
+        direction LR
+        RP[Result & Stats]
+        PL[Plotting]
+    end
+
+    DP --> BE
+    ST --> BE
+    CF --> BE
+    BE --> RP
+    RP --> PL
+
+    classDef input fill:#e1f5fe
+    classDef core fill:#e8f5e9
+    classDef output fill:#fff3e0
+    
+    class DP,ST,CF input
+    class BE,EV,BR,PM core
+    class RP,PL output
 ```
 
-## 🚀 설치 및 시작하기
-
-### 1. 설치
+## 📦 설치
 
 ```bash
-# pip를 통한 설치 (향후 지원 예정)
-pip install quantbt
-
-# 또는 소스코드에서 직접 설치
-git clone https://github.com/your-repo/quantbt
+# 저장소 클론
+git clone https://github.com/lazydok/quantbt.git
 cd quantbt
+
+# 의존성 설치
+pip install -r requirements.txt
+
+# 가상 편집 모드로 설치
 pip install -e .
 ```
 
-### 2. 의존성
+## ⚡ 5분 만에 시작하기: 간단한 전략 백테스팅
 
-```bash
-pip install polars numpy pydantic click
-```
-
-### 3. 기본 사용법
-
-[📊 기본 전략 튜토리얼 Jupyter Notebook 으로 배우기 <-- 클릭](quantbt/examples/simple_strategy_tutorial.ipynb) 
+이동평균선 두 개의 교차를 이용하는 간단한 전략을 백테스팅하는 예제입니다.
 
 ```python
-import asyncio
-from quantbt import (
-    SimpleBacktestEngine,
-    CSVDataProvider,
-    SimpleBroker,
-    SimpleMovingAverageCrossStrategy,
-    BacktestConfig
-)
-from datetime import datetime
+import quantbt as qbt
+from quantbt.strategies import SMAStrategy
 
-async def simple_backtest():
-    # 백테스팅 설정
-    config = BacktestConfig(
-        start_date=datetime(2023, 1, 1),
-        end_date=datetime(2023, 12, 31),
-        initial_cash=100000.0,
-        symbols=["AAPL"],  # 단일 심볼
-        timeframe="1D",
-        commission_rate=0.001,
-        slippage_rate=0.0001
-    )
-    
-    # 컴포넌트 생성
-    data_provider = CSVDataProvider("./data")
-    broker = SimpleBroker(
-        initial_cash=config.initial_cash,
-        commission_rate=config.commission_rate,
-        slippage_rate=config.slippage_rate
-    )
-    
-    # 이동평균 교차 전략
-    strategy = SimpleMovingAverageCrossStrategy(
-        short_window=10, 
-        long_window=30
-    )
-    
-    engine = SimpleBacktestEngine()
-    
-    # 백테스팅 실행
-    engine.set_strategy(strategy)
-    engine.set_data_provider(data_provider)
-    engine.set_broker(broker)
-    
-    result = await engine.run(config)
-    
-    # 결과 출력
-    result.print_summary()
-    print(f"총 수익률: {result.total_return_pct:.2f}%")
-    print(f"샤프 비율: {result.sharpe_ratio:.2f}")
-    print(f"최대 낙폭: {result.max_drawdown_pct:.2f}%")
+# 1. 데이터 준비: 비트코인 1일봉 데이터를 불러옵니다.
+ohlcv = qbt.load_data("BTCUSDT", timeframe="1d")
 
-# 실행
-asyncio.run(simple_backtest())
-```
+# 2. 전략 선택: 단기(10일) 이평선과 장기(30일) 이평선 교차 전략을 사용합니다.
+strategy = SMAStrategy(fast_sma=10, slow_sma=30)
 
-## 🎨 내장 전략 예제
-
-### 1. 바이 앤 홀드 전략
-
-```python
-from quantbt import BuyAndHoldStrategy
-
-strategy = BuyAndHoldStrategy()
-# 초기에 매수 후 계속 보유
-```
-
-### 2. 이동평균 교차 전략
-
-```python
-from quantbt import SimpleMovingAverageCrossStrategy
-
-strategy = SimpleMovingAverageCrossStrategy(
-    short_window=10,  # 단기 이동평균
-    long_window=30    # 장기 이동평균
-)
-# 골든/데드 크로스 신호로 매매
-```
-
-### 3. RSI 전략
-
-```python
-from quantbt import RSIStrategy
-
-strategy = RSIStrategy(
-    rsi_period=14,    # RSI 계산 기간
-    oversold=30,      # 과매도 기준
-    overbought=70     # 과매수 기준
-)
-# 과매도/과매수 구간에서 매매
-```
-
-### 4. 커스텀 전략 개발
-
-```python
-from quantbt import TradingStrategy, Order, OrderSide, OrderType
-import polars as pl
-
-class MyCustomStrategy(TradingStrategy):
-    """커스텀 전략 예제"""
-    
-    def __init__(self):
-        super().__init__(
-            name="MyCustomStrategy",
-            position_size_pct=0.9,  # 90% 포지션
-            max_positions=1         # 단일 포지션
-        )
-        self.indicator_columns = ["sma_20", "rsi"]
-        
-    def _compute_indicators_for_symbol(self, symbol_data: pl.DataFrame) -> pl.DataFrame:
-        """지표 사전 계산"""
-        data = symbol_data.sort("timestamp")
-        
-        # SMA와 RSI 계산
-        sma_20 = self.calculate_sma(data["close"], 20)
-        rsi = self.calculate_rsi(data["close"], 14)
-        
-        return data.with_columns([
-            sma_20.alias("sma_20"),
-            rsi.alias("rsi")
-        ])
-    
-    def generate_signals(self, data):
-        """신호 생성 - 지표값과 단순 비교"""
-        orders = []
-        
-        for symbol in data.symbols:
-            current_price = self.get_current_price(symbol, data)
-            sma_value = self.get_indicator_value(symbol, "sma_20", data)
-            rsi_value = self.get_indicator_value(symbol, "rsi", data)
-            
-            if current_price and sma_value and rsi_value:
-                current_positions = self.get_current_positions()
-                
-                # 매수 조건
-                if (current_price > sma_value and rsi_value < 30 
-                    and symbol not in current_positions):
-                    
-                    quantity = self.calculate_position_size(
-                        symbol, current_price, self.get_portfolio_value()
-                    )
-                    orders.append(Order(
-                        symbol=symbol,
-                        side=OrderSide.BUY,
-                        quantity=quantity,
-                        order_type=OrderType.MARKET
-                    ))
-                
-                # 매도 조건
-                elif (symbol in current_positions and 
-                      (rsi_value > 70 or current_price < sma_value)):
-                    
-                    orders.append(Order(
-                        symbol=symbol,
-                        side=OrderSide.SELL,
-                        quantity=current_positions[symbol],
-                        order_type=OrderType.MARKET
-                    ))
-                
-        return orders
-```
-
-## 💾 업비트 데이터 프로바이더
-
-QuantBT는 **업비트 API**를 통한 실시간 암호화폐 데이터 백테스팅을 지원합니다. 
-
-### 🚀 빠른 시작
-
-```python
-from quantbt import UpbitDataProvider, BacktestConfig
-from datetime import datetime, timedelta
-
-# 업비트 데이터 프로바이더 생성
-upbit_provider = UpbitDataProvider(
-    cache_dir="./data/upbit_cache",
-    rate_limit_delay=0.1
+# 3. 백테스팅 실행: 2023년 데이터로 백테스팅을 수행합니다.
+result = qbt.backtest(
+    strategy=strategy,
+    ohlcv=ohlcv,
+    start_date="2023-01-01",
+    end_date="2023-12-31",
+    initial_cash=10000,
+    commission=0.001
 )
 
-# 주요 암호화폐 백테스팅
-config = BacktestConfig(
-    symbols=["KRW-BTC", "KRW-ETH", "KRW-XRP"],
-    start_date=datetime.now() - timedelta(days=30),
-    end_date=datetime.now(),
-    timeframe="1h",
-    initial_cash=10000000  # 1천만원
-)
-
-# 백테스팅 실행
-engine = SimpleBacktestEngine()
-engine.set_data_provider(upbit_provider)
-result = await engine.run(config)
+# 4. 결과 확인: 주요 성과 지표와 자산 곡선 차트를 확인합니다.
+print(result.stats)
+result.plot()
 ```
 
-### 📚 상세 가이드
-업비트 데이터 프로바이더의 자세한 사용법은 **[업비트 프로바이더 가이드](quantbt/docs/upbit_provider_guide.md)**를 참조하세요.
+## 📚 튜토리얼 및 가이드
 
-## ⭐ 핵심 컨셉: 지표 사전 계산
+QuantBT의 강력하고 다양한 기능들을 예제와 함께 배워보세요.
 
-### 🔧 작동 원리
+| 튜토리얼                               | 설명                                                                   | 가이드 문서                                                                      | 예제 노트북                                                                            |
+| -------------------------------------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| **1. 기본 전략 백테스팅**          | 단일 종목에 대한 기본적인 백테스팅 과정을 알아봅니다.                  | [📄 가이드 보기](./quantbt/docs/01_simple_strategy_guide.md)                     | [💻 코드 실행](./quantbt/examples/01_simple_strategy.ipynb)                            |
+| **2. 멀티 심볼 전략**              | 여러 종목으로 구성된 포트폴리오 전략을 테스트합니다.                   | [📄 가이드 보기](./quantbt/docs/02_multi_symbol_strategy_guide.md)                 | [💻 코드 실행](./quantbt/examples/02_multi_symbol_strategy.ipynb)                        |
+| **3. 크로스 심볼 전략**            | 특정 종목의 지표로 다른 종목을 거래하는 고급 전략을 구현합니다.          | [📄 가이드 보기](./quantbt/docs/03_cross_symbol_indicator_strategy_guide.md)     | [💻 코드 실행](./quantbt/examples/03_cross_symbol_indicator_strategy.ipynb)              |
+| **4. 멀티 타임프레임 전략**        | 시간봉과 분봉을 함께 사용하여 더 정교한 매매 타이밍을 분석합니다.        | [📄 가이드 보기](./quantbt/docs/04_multi_timeframe_strategy_guide.md)            | [💻 코드 실행](./quantbt/examples/04_multi_timeframe_strategy.ipynb)                     |
+| **5. 파라미터 병렬 탐색**          | 그리드 서치를 병렬로 수행하여 최적의 파라미터를 빠르게 찾습니다.       | [📄 가이드 보기](./quantbt/docs/05_parallel_search_guide.md)                     | [💻 코드 실행](./quantbt/examples/05_parallel_search.ipynb)                            |
+| **6. 베이지안 최적화**             | 더 적은 시도로 더 나은 파라미터를 찾는 지능적인 최적화를 수행합니다.     | [📄 가이드 보기](./quantbt/docs/06_bayesian_optimization_guide.md)                 | [💻 코드 실행](./quantbt/examples/06_bayesian_optimization.ipynb)                        |
 
-1. **데이터 로드**: 원본 OHLCV 데이터를 DataFrame으로 로드
-2. **지표 계산**: 필요한 모든 기술적 지표를 사전에 계산
-3. **시점별 배치**: 각 시점에서 해당 시점까지의 누적 데이터를 배치로 생성
-4. **신호 생성**: 계산된 지표값과 단순 비교로 빠른 신호 생성
+## 🛣️ 로드맵
 
-### ⚡ 성능 장점
-
-- **빠른 신호 생성**: 백테스팅 중 복잡한 계산 없이 단순 비교만 수행
-- **메모리 효율성**: 한 번 계산된 지표를 재사용
-- **병렬 처리 최적화**: Polars의 네이티브 연산 활용
-- **룩어헤드 바이어스 방지**: 각 시점에서 과거 데이터만 접근 가능
-
-### 🎯 MarketDataBatch 구조
-
-```mermaid
-classDiagram
-    class MarketDataBatch {
-        +DataFrame data
-        +List~str~ symbols
-        +str timeframe
-        +get_latest(symbol) MarketData
-        +get_latest_with_indicators(symbol) Dict
-        +get_symbol_data(symbol) DataFrame
-        +get_price_dict(price_type) Dict
-        +get_indicator_dict(indicator_name) Dict
-    }
-    
-    class DataFrame {
-        +timestamp: DateTime
-        +symbol: String
-        +open: Float64
-        +high: Float64
-        +low: Float64
-        +close: Float64
-        +volume: Float64
-        +sma_10: Float64
-        +sma_30: Float64
-        +rsi: Float64
-        +[기타 지표들...]
-    }
-    
-    MarketDataBatch --> DataFrame : contains
-```
-
-## 📈 성능 분석
-
-백테스팅 결과는 다음과 같은 성능 지표를 제공합니다:
-
-- **수익률 지표**: 총 수익률, 연간 수익률, 월별 수익률
-- **리스크 지표**: 변동성, 최대 낙폭, VaR
-- **비율 지표**: 샤프 비율, 소르티노 비율, 칼마 비율
-- **거래 통계**: 거래 횟수, 승률, 평균 수익/손실
-
-```python
-# 결과 분석 예제
-result = await engine.run(config)
-
-print(f"총 수익률: {result.total_return_pct:.2f}%")
-print(f"연간 수익률: {result.annual_return_pct:.2f}%")
-print(f"변동성: {result.volatility_pct:.2f}%")
-print(f"샤프 비율: {result.sharpe_ratio:.2f}")
-print(f"최대 낙폭: {result.max_drawdown_pct:.2f}%")
-print(f"총 거래 수: {result.total_trades}")
-print(f"승률: {result.win_rate_pct:.2f}%")
-```
-
-## 🔧 고급 기능
-
-### 1. 멀티심볼 포트폴리오 전략 📊
-여러 종목을 동시에 관리하는 포트폴리오 전략을 지원합니다.
-
-👉 **[멀티심볼 전략 가이드](quantbt/docs/multi_symbol_guide.md)** - 상세한 사용법과 예제
-
-### 2. 멀티타임프레임 분석 🕐
-1분봉 기반으로 5분봉, 1시간봉 등 다양한 시간대를 동시에 분석하여 더 정교한 신호를 생성합니다.
-
-```python
-from quantbt import MultiTimeframeSMAStrategy
-
-# 멀티타임프레임 전략 생성
-strategy = MultiTimeframeSMAStrategy(
-    timeframes=["1m", "5m", "1h"],  # 1분, 5분, 1시간봉 동시 사용
-    config={
-        "hourly_short_period": 10,   # 1시간봉 단기 SMA
-        "hourly_long_period": 20,    # 1시간봉 장기 SMA  
-        "signal_short_period": 5,    # 5분봉 단기 SMA
-        "signal_long_period": 10     # 5분봉 장기 SMA
-    }
-)
-
-# 1시간봉 트렌드 + 5분봉 진입신호 조합으로 매매
-result = await engine.run(config)
-```
-
-👉 **[멀티타임프레임 가이드](quantbt/docs/multi_timeframe_guide.md)** - 상세한 사용법과 예제
-
-### 3. 커스텀 데이터 소스
-
-```python
-from quantbt.core.interfaces.data_provider import IDataProvider
-
-class CustomDataProvider(IDataProvider):
-    async def load_data(self, symbols, start_date, end_date, timeframe):
-        # 커스텀 데이터 로딩 로직
-        pass
-```
-
-## 📚 문서 및 예제
-
-- **핵심 가이드**
-  - [멀티심볼 전략 가이드](quantbt/docs/multi_symbol_guide.md) 📊
-  - [멀티타임프레임 가이드](quantbt/docs/multi_timeframe_guide.md) 🕐
-  - [업비트 데이터 프로바이더 가이드](quantbt/docs/upbit_provider_guide.md) 🪙
-- **참고 문서**
-  - [API 문서](quantbt/docs/api.md)
-  - [성능 최적화 가이드](quantbt/docs/performance.md)
-  - [지표 계산 레퍼런스](quantbt/docs/indicators.md)
-- **예제 코드**
-  - [📊 기본 전략 튜토리얼](quantbt/examples/simple_strategy_tutorial.ipynb) 
-  - [📋 튜토리얼 실행 결과](quantbt/docs/simple_strategy_tutorial_results.md)
-  - [전체 예제 코드](quantbt/examples/)
+- [x] 고성능 이벤트 기반 백테스팅 엔진
+- [x] 기본 전략 라이브러리 (SMA, RSI, Buy & Hold)
+- [x] 룩어헤드 편향 방지 시스템
+- [x] 멀티 심볼 포트폴리오 전략 지원
+- [x] 멀티 타임프레임 분석 시스템 (리샘플링)
+- [x] 파라미터 최적화 병렬 처리 (Ray 연동)
+- [x] 베이지안 파라미터 최적화
+- [ ] 실시간 데이터 피드 연동 (Live Trading)
+- [ ] 머신러닝/딥러닝 전략 프레임워크 통합
+- [ ] 클라우드 기반 대규모 백테스팅 지원
+- [ ] 웹 기반 분석 대시보드
 
 ## 🤝 기여하기
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+QuantBT는 오픈소스 프로젝트입니다. 여러분의 기여를 언제나 환영합니다! 버그 리포트, 기능 제안, 코드 기여 등 어떤 형태의 참여든 좋습니다.
+
+1.  저장소를 Fork 하세요.
+2.  새로운 기능 브랜치를 만드세요 (`git checkout -b feature/amazing-feature`).
+3.  변경사항을 커밋하세요 (`git commit -m 'Add some amazing feature'`).
+4.  브랜치에 푸시하세요 (`git push origin feature/amazing-feature`).
+5.  Pull Request를 열어주세요.
 
 ## 📄 라이센스
 
 이 프로젝트는 MIT 라이센스 하에 배포됩니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
 
-## 🛣️ 로드맵
-
-- [x] 지표 사전 계산 아키텍처
-- [x] 기본 전략 라이브러리 (SMA, RSI, BuyAndHold)
-- [x] 룩어헤드 바이어스 방지 시스템
-- [x] **업비트 API 데이터 프로바이더** 🆕
-- [x] **멀티심볼 포트폴리오 전략** 📊
-- [x] **멀티타임프레임 분석 시스템** 🕐
-- [ ] 고급 지표 라이브러리 (MACD, Bollinger Bands, Stochastic)
-- [ ] 포트폴리오 리밸런싱 전략
-- [ ] 백테스팅 병렬처리 지원
-- [ ] 웹 기반 대시보드
-- [ ] 실시간 데이터 피드 지원
-- [ ] 머신러닝 기반 전략 프레임워크
-- [ ] 고급 포트폴리오 최적화 도구
-- [ ] 리스크 관리 모듈 확장
-- [ ] 클라우드 배포 지원
-
-## 💬 지원 및 문의
-
-- 이슈 리포팅: [GitHub Issues](https://github.com/lazydok/quantbt/issues)
-- 문의사항: soundlayerd@gmail.com
-
 ---
 
-**⚠️ 면책 조항**: 이 소프트웨어는 교육 및 연구 목적으로 제공됩니다. 실제 거래에 사용하기 전에 충분한 검증을 거치시기 바랍니다. 투자 손실에 대한 책임은 사용자에게 있습니다.
+**⚠️ 면책 조항**: 이 소프트웨어는 교육 및 연구 목적으로만 제공됩니다. 실제 투자에 따른 모든 책임은 사용자 본인에게 있습니다.
