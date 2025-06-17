@@ -3,12 +3,10 @@ CSV 데이터 제공자
 
 CSV 파일에서 시장 데이터를 로드하는 데이터 제공자입니다.
 """
-
-import os
-from pathlib import Path
-from typing import List, Dict, Any, AsyncIterator
+from typing import List, Dict, Optional
 from datetime import datetime
 import polars as pl
+from pathlib import Path
 
 from ...core.interfaces.data_provider import DataProviderBase
 
@@ -21,50 +19,58 @@ except ImportError:
 
 
 class CSVDataProvider(DataProviderBase):
-    """CSV 파일 기반 데이터 제공자"""
+    """
+    CSV 파일 기반 데이터 제공자.
+    멀티 심볼 및 멀티 타임프레임 데이터를 지원하도록 설계되었습니다.
+
+    Args:
+        data_files (Dict[str, Dict[str, str]]):
+            심볼과 타임프레임에 따른 파일 경로 딕셔너리.
+            예시:
+            {
+                "BTC-USD": {
+                    "1d": "/path/to/btc_daily.csv",
+                    "1m": "/path/to/btc_minute.csv"
+                },
+                "ETH-USD": {
+                    "1d": "/path/to/eth_daily.csv"
+                }
+            }
+        date_format (str, optional): CSV 파일의 날짜 형식. 기본값: None (자동 감지).
+        timestamp_column (str, optional): 타임스탬프 컬럼명. 기본값: "date".
+    """
     
     def __init__(
         self, 
-        data_dir: str,
-        date_format: str = "%Y-%m-%d",
-        symbol_column: str = "symbol",
-        timestamp_column: str = "timestamp"
+        data_files: Dict[str, Dict[str, str]],
+        date_format: Optional[str] = None,
+        timestamp_column: str = "date"
     ):
         super().__init__("CSVDataProvider")
-        self.data_dir = Path(data_dir)
+        self.data_files = data_files
         self.date_format = date_format
-        self.symbol_column = symbol_column
         self.timestamp_column = timestamp_column
+        self._resampled_data_cache: Dict[str, pl.DataFrame] = {} # 리샘플링 데이터 캐시
         
-        if not self.data_dir.exists():
-            raise ValueError(f"Data directory does not exist: {data_dir}")
-    
+        # 데이터 파일 존재 여부 검증
+        for symbol, timeframes in self.data_files.items():
+            for timeframe, path in timeframes.items():
+                if not Path(path).exists():
+                    raise ValueError(f"Data file does not exist for {symbol} at {timeframe}: {path}")
+
     def supports_timeframe(self, timeframe: str) -> bool:
-        """타임프레임 지원 여부 확인 - CSV는 모든 타임프레임 지원"""
-        return self.validate_timeframe(timeframe)
+        """타임프레임 지원 여부 확인"""
+        # 직접 제공되거나, 분봉에서 리샘플링 가능한 경우 지원
+        for symbol_data in self.data_files.values():
+            if timeframe in symbol_data:
+                return True
+            if '1m' in symbol_data and timeframe == '1d': # 분봉 -> 일봉 리샘플링 지원
+                return True
+        return False
     
     def _load_available_symbols(self) -> List[str]:
-        """CSV 파일에서 사용 가능한 심볼 로드"""
-        symbols = set()
-        
-        # CSV 파일들을 스캔하여 심볼 추출
-        for csv_file in self.data_dir.glob("*.csv"):
-            try:
-                # 파일명에서 심볼 추출 (예: AAPL.csv -> AAPL)
-                symbol_from_filename = csv_file.stem.upper()
-                symbols.add(symbol_from_filename)
-                
-                # 파일 내용에서도 심볼 확인
-                df = pl.read_csv(csv_file, n_rows=10)
-                if self.symbol_column in df.columns:
-                    file_symbols = df.select(self.symbol_column).unique().to_series().to_list()
-                    symbols.update(symbol.upper() for symbol in file_symbols)
-                    
-            except Exception as e:
-                print(f"Warning: Could not read {csv_file}: {e}")
-                continue
-        
-        return sorted(list(symbols))
+        """사용 가능한 심볼 로드"""
+        return sorted(list(self.data_files.keys()))
     
     async def _fetch_raw_data(
         self,
@@ -77,173 +83,134 @@ class CSVDataProvider(DataProviderBase):
         all_data = []
         
         for symbol in symbols:
-            symbol_data = self._load_symbol_data(symbol, start, end)
-            if symbol_data is not None and symbol_data.height > 0:
+            symbol_files = self.data_files.get(symbol)
+            if not symbol_files:
+                print(f"Warning: No data files configured for symbol {symbol}")
+                continue
+
+            file_path = symbol_files.get(timeframe)
+            
+            # 요청한 타임프레임이 없을 경우, 리샘플링 시도
+            if file_path is None:
+                if timeframe == '1d' and '1m' in symbol_files:
+                    symbol_data = self._get_resampled_data(symbol, start, end)
+                else:
+                    # 지원하지 않는 타임프레임
+                    print(f"Warning: Timeframe '{timeframe}' not available for symbol {symbol}")
+                    continue
+            else:
+                symbol_data = self._read_and_filter_csv(file_path, symbol, start, end)
+
+            if symbol_data is not None and not symbol_data.is_empty():
                 all_data.append(symbol_data)
         
         if not all_data:
-            # 빈 DataFrame 반환
-            return pl.DataFrame({
-                "timestamp": [],
-                "symbol": [],
-                "open": [],
-                "high": [],
-                "low": [],
-                "close": [],
-                "volume": []
-            }, schema={
-                "timestamp": pl.Datetime,
-                "symbol": pl.Utf8,
-                "open": pl.Float64,
-                "high": pl.Float64,
-                "low": pl.Float64,
-                "close": pl.Float64,
-                "volume": pl.Float64
-            })
+            return self._get_empty_df()
         
-        # 모든 데이터 결합
         combined_data = pl.concat(all_data)
-        
-        # 날짜 범위 필터링
-        filtered_data = combined_data.filter(
-            (pl.col("timestamp") >= start) & (pl.col("timestamp") <= end)
-        )
-        
-        return filtered_data
-    
-    def _load_symbol_data(
-        self, 
-        symbol: str, 
-        start: datetime, 
-        end: datetime
-    ) -> pl.DataFrame:
-        """특정 심볼의 데이터 로드"""
-        # 여러 파일 패턴 시도
-        possible_files = [
-            self.data_dir / f"{symbol}.csv",
-            self.data_dir / f"{symbol.lower()}.csv",
-            self.data_dir / "data.csv",  # 모든 심볼이 하나의 파일에 있는 경우
-        ]
-        
-        for csv_file in possible_files:
-            if csv_file.exists():
-                try:
-                    df = self._read_csv_file(csv_file, symbol)
-                    if df is not None and df.height > 0:
-                        return df
-                except Exception as e:
-                    print(f"Warning: Could not read {csv_file} for {symbol}: {e}")
-                    continue
-        
-        print(f"Warning: No data found for symbol {symbol}")
-        return None
-    
-    def _read_csv_file(self, csv_file: Path, target_symbol: str) -> pl.DataFrame:
-        """CSV 파일 읽기 및 표준화"""
-        try:
-            # CSV 파일 읽기
-            df = pl.read_csv(csv_file)
+        return combined_data
+
+    def _get_resampled_data(self, symbol: str, start: datetime, end: datetime) -> Optional[pl.DataFrame]:
+        """
+        분봉 데이터를 일봉으로 리샘플링하고 결과를 캐시합니다.
+        """
+        cache_key = f"{symbol}_1d_from_1m"
+        if cache_key in self._resampled_data_cache:
+            resampled_df = self._resampled_data_cache[cache_key]
+        else:
+            minute_file_path = self.data_files[symbol]['1m']
+            df = self._read_and_filter_csv(minute_file_path, symbol, datetime.min, datetime.max)
             
-            # 컬럼명 정규화 (소문자로 변환)
+            if df is None or df.is_empty():
+                return None
+
+            # 일봉으로 리샘플링
+            resampled_df = df.group_by_dynamic(
+                "timestamp", every="1d", group_by="symbol"
+            ).agg([
+                pl.col("open").first(),
+                pl.col("high").max(),
+                pl.col("low").min(),
+                pl.col("close").last(),
+                pl.col("volume").sum(),
+            ]).sort("timestamp")
+            
+            # 열 순서 맞추기
+            resampled_df = resampled_df.select(
+                "timestamp", "open", "high", "low", "close", "volume", "symbol"
+            )
+
+            self._resampled_data_cache[cache_key] = resampled_df
+
+        # 날짜 범위 필터링
+        return resampled_df.filter((pl.col("timestamp") >= start) & (pl.col("timestamp") <= end))
+
+    def _read_and_filter_csv(self, file_path: str, symbol: str, start: datetime, end: datetime) -> Optional[pl.DataFrame]:
+        """CSV 파일을 읽고 날짜로 필터링합니다."""
+        try:
+            # 파일에서 실제 헤더를 먼저 읽어옴
+            header = pl.read_csv(Path(file_path), n_rows=0).columns
+            
+            # dtypes 딕셔너리 생성
+            read_dtypes = {col: pl.Utf8 for col in header}
+            
+            df = pl.read_csv(Path(file_path), schema_overrides=read_dtypes)
+            
+            # 컬럼명 표준화 (소문자로)
             df = df.rename({col: col.lower() for col in df.columns})
             
+            # 타임스탬프 컬럼 이름 맞추기
+            current_ts_col = self.timestamp_column.lower()
+            if current_ts_col in df.columns and current_ts_col != "timestamp":
+                 df = df.rename({current_ts_col: "timestamp"})
+
             # 필수 컬럼 확인
-            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            
-            # 타임스탬프 컬럼 대안 확인
-            if "timestamp" not in df.columns:
-                for alt_col in ["date", "datetime", "time"]:
-                    if alt_col in df.columns:
-                        df = df.rename({alt_col: "timestamp"})
-                        break
-            
-            if "timestamp" not in df.columns:
-                raise ValueError("No timestamp column found")
-            
-            # 심볼 컬럼 처리
-            if "symbol" not in df.columns:
-                # 심볼 컬럼이 없으면 파일명에서 추출한 심볼 사용
-                df = df.with_columns(pl.lit(target_symbol).alias("symbol"))
-            else:
-                # 특정 심볼만 필터링
-                df = df.filter(pl.col("symbol").str.to_uppercase() == target_symbol.upper())
-            
+            required = {"timestamp", "open", "high", "low", "close", "volume"}
+            if not required.issubset(df.columns):
+                raise ValueError(f"CSV file {file_path} is missing one of required columns: {required}")
+                
             # 타임스탬프 파싱
-            df = self._parse_timestamp(df)
+            if df.select("timestamp").dtypes[0] != pl.Datetime:
+                if self.date_format:
+                    df = df.with_columns(pl.col("timestamp").str.to_datetime(format=self.date_format))
+                else:
+                    df = df.with_columns(pl.col("timestamp").str.to_datetime())
             
-            # 필수 컬럼 재확인
-            missing_columns = [col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                raise ValueError(f"Missing required columns: {missing_columns}")
-            
-            # 데이터 타입 변환
-            df = df.with_columns([
-                pl.col("open").cast(pl.Float64),
-                pl.col("high").cast(pl.Float64),
-                pl.col("low").cast(pl.Float64),
-                pl.col("close").cast(pl.Float64),
-                pl.col("volume").cast(pl.Float64),
-                pl.col("symbol").cast(pl.Utf8)
-            ])
-            
-            return df
-            
+            # 네이티브 타임스탬프로 변환하여 타임존 정보 제거
+            df = df.with_columns(pl.col("timestamp").dt.replace_time_zone(None))
+
+            # 데이터 타입 캐스팅 및 심볼 추가
+            df = df.select([
+                pl.col("timestamp"),
+                pl.col("open").str.strip_chars().cast(pl.Float64),
+                pl.col("high").str.strip_chars().cast(pl.Float64),
+                pl.col("low").str.strip_chars().cast(pl.Float64),
+                pl.col("close").str.strip_chars().cast(pl.Float64),
+                pl.col("volume").str.strip_chars().cast(pl.Float64)
+            ]).with_columns(pl.lit(symbol).alias("symbol"))
+
+            # 날짜 필터링 및 정렬
+            return df.filter(
+                (pl.col("timestamp") >= start) & (pl.col("timestamp") <= end)
+            ).sort("timestamp")
+
         except Exception as e:
-            raise ValueError(f"Error reading CSV file {csv_file}: {e}")
-    
-    def _parse_timestamp(self, df: pl.DataFrame) -> pl.DataFrame:
-        """타임스탬프 파싱"""
-        try:
-            # 이미 datetime 타입인지 확인
-            if df.select("timestamp").dtypes[0] == pl.Datetime:
-                return df
+            print(f"Error reading or processing file {file_path}: {e}")
+            return None
             
-            # 문자열에서 datetime으로 변환 시도
-            try:
-                df = df.with_columns(
-                    pl.col("timestamp").str.strptime(pl.Datetime, format=self.date_format)
-                )
-            except:
-                # 자동 파싱 시도
-                df = df.with_columns(
-                    pl.col("timestamp").str.strptime(pl.Datetime)
-                )
-            
-            return df
-            
-        except Exception as e:
-            raise ValueError(f"Could not parse timestamp column: {e}")
-    
-    def get_data_info(self) -> Dict[str, Any]:
-        """데이터 정보 반환"""
-        symbols = self.get_symbols()
-        info = {
-            "provider": self.name,
-            "data_dir": str(self.data_dir),
-            "available_symbols": symbols,
-            "symbol_count": len(symbols)
-        }
-        
-        # 각 심볼별 데이터 범위 정보
-        symbol_info = {}
-        for symbol in symbols[:5]:  # 처음 5개만 샘플링
-            try:
-                data = self._load_symbol_data(symbol, datetime(1900, 1, 1), datetime(2100, 1, 1))
-                if data is not None and data.height > 0:
-                    timestamps = data.select("timestamp").to_series()
-                    symbol_info[symbol] = {
-                        "start_date": timestamps.min(),
-                        "end_date": timestamps.max(),
-                        "record_count": data.height
-                    }
-            except:
-                continue
-        
-        info["sample_data_ranges"] = symbol_info
-        return info
+    def _get_empty_df(self) -> pl.DataFrame:
+        """빈 데이터프레임을 표준 스키마와 함께 반환합니다."""
+        return pl.DataFrame({
+            "timestamp": [], "symbol": [], "open": [], "high": [],
+            "low": [], "close": [], "volume": []
+        }, schema={
+            "timestamp": pl.Datetime, "symbol": pl.Utf8, "open": pl.Float64,
+            "high": pl.Float64, "low": pl.Float64, "close": pl.Float64,
+            "volume": pl.Float64
+        })
 
     def _post_process_data(self, data: pl.DataFrame) -> pl.DataFrame:
-        """데이터 후처리"""
-        # 기본적인 후처리 (정렬, 중복 제거 등)
+        """데이터 후처리 (정렬, 중복 제거 등)"""
+        if data.is_empty():
+            return data
         return data.sort(["timestamp", "symbol"]).unique() 
