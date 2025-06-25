@@ -374,7 +374,7 @@ class BacktestEngine(BacktestEngineBase):
                 
                 # 전략 신호 생성
                 try:
-                    signals = self.strategy.generate_signals_dict(row_data)
+                    signals = self.strategy.generate_signals(row_data)
                     
                     # 신호를 주문 대기열에 추가
                     for order in signals:

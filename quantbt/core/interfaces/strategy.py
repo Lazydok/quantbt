@@ -45,7 +45,7 @@ class IStrategy(Protocol):
         """
         ...
     
-    def generate_signals_dict(self, current_data: Dict[str, Any]) -> List[Order]:
+    def generate_signals(self, current_data: Dict[str, Any]) -> List[Order]:
         """Dict 기반 신호 생성
         
         Args:
@@ -239,7 +239,7 @@ class TradingStrategy(StrategyBase):
         target_value = portfolio_value * self.position_size_pct
         return target_value / price
     
-    def generate_signals_dict(self, current_data: Dict[str, Any]) -> List[Order]:
+    def generate_signals(self, current_data: Dict[str, Any]) -> List[Order]:
         """Dict 기반 신호 생성 - 서브클래스에서 구현
         
         Args:
@@ -386,7 +386,7 @@ class MultiTimeframeTradingStrategy(TradingStrategy):
         """
         pass
     
-    def generate_signals_dict(self, current_data: Dict[str, Any]) -> List[Order]:
+    def generate_signals(self, current_data: Dict[str, Any]) -> List[Order]:
         """단일 타임프레임 방식 호출 시 처리"""
         # Multi timeframe 전략에서는 사용하지 않음
         # 호환성을 위해 빈 리스트 반환

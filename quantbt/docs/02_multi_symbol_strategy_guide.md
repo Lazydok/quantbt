@@ -50,7 +50,7 @@ class MultiSymbolSMAStrategy(TradingStrategy):
             sell_sma.alias(f"sma_{self.sell_sma}")
         ])
 
-    def generate_signals_dict(self, current_data: dict):
+    def generate_signals(self, current_data: dict):
         orders = []
         symbol = current_data['symbol']
         current_price = current_data['close']
