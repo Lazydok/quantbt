@@ -1133,6 +1133,7 @@ class BacktestResult:
             "volatility": self.volatility,
             "volatility_pct": self.volatility_pct,
             "sharpe_ratio": self.sharpe_ratio,
+            "calmar_ratio": self._calculate_calmar_ratio(),
             "max_drawdown": self.max_drawdown,
             "max_drawdown_pct": self.max_drawdown_pct,
             

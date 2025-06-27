@@ -162,7 +162,23 @@ class BayesianParameterOptimizer:
                     monitor_payload = {'params': params, **result}
                     monitor.record_result(monitor_payload)
 
-                    trial_result = {'params': params, 'result': result}
+                    # 주요 지표들을 최상위 레벨에 추가하여 접근성 향상
+                    trial_result = {
+                        'params': params,
+                        'result': result,
+                        # 주요 성과 지표들을 최상위 레벨에 추가
+                        'sharpe_ratio': result.get('sharpe_ratio', 0.0),
+                        'calmar_ratio': result.get('calmar_ratio', 0.0),
+                        'total_return': result.get('total_return', 0.0),
+                        'annual_return': result.get('annual_return', 0.0),
+                        'max_drawdown': result.get('max_drawdown', 0.0),
+                        'volatility': result.get('volatility', 0.0),
+                        'win_rate': result.get('win_rate', 0.0),
+                        'profit_factor': result.get('profit_factor', 0.0),
+                        'total_trades': result.get('total_trades', 0),
+                        'final_equity': result.get('final_equity', 0.0),
+                        'success': result.get('success', True)
+                    }
                     all_results.append(trial_result)
 
                 progress_tracker.update(completed=len(batch_results_raw))
