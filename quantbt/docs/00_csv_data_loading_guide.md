@@ -1,19 +1,19 @@
-# 가이드: 로컬 CSV 파일로 나만의 데이터 사용하기
+# Guide: Using Your Own Data with Local CSV Files
 
-QuantBT의 모든 예제는 기본적으로 `UpbitDataProvider`를 사용하도록 설정되어 있습니다. 이 데이터 프로바이더는 Upbit API를 통해 시장 데이터를 실시간으로 조회하고, 한번 조회한 데이터는 로컬에 캐싱하여 다음 실행부터는 매우 빠르게 데이터를 불러오는 장점이 있습니다.
+All QuantBT examples are configured to use `UpbitDataProvider` by default. This data provider has the advantage of querying market data in real-time through the Upbit API and caching the data locally for very fast loading in subsequent runs.
 
-하지만 Upbit에서 지원하지 않는 자산을 분석하거나, 특정 기간의 데이터를 오프라인 환경에서 사용하고 싶을 때가 있습니다. 이런 상황을 위해 `CSVDataProvider`를 사용하여 자신만의 데이터를 백테스팅에 활용할 수 있습니다.
+However, there are times when you want to analyze assets not supported by Upbit or use data for specific periods in an offline environment. For such situations, you can use `CSVDataProvider` to utilize your own data for backtesting.
 
-## 1. CSV 데이터 준비하기
+## 1. Preparing CSV Data
 
-먼저, 백테스팅에 사용할 CSV 파일을 준비해야 합니다. `CSVDataProvider`가 올바르게 데이터를 읽으려면 파일이 정해진 형식을 따르는 것이 중요합니다.
+First, you need to prepare CSV files for backtesting. For `CSVDataProvider` to read data correctly, it's important that files follow the specified format.
 
-### 데이터 포맷
+### Data Format
 
--   **필수 컬럼**: `date`, `open`, `high`, `low`, `close`, `volume`
--   **날짜 형식**: `YYYY-MM-DD` 또는 `YYYY-MM-DD HH:MM:SS`
+-   **Required columns**: `date`, `open`, `high`, `low`, `close`, `volume`
+-   **Date format**: `YYYY-MM-DD` or `YYYY-MM-DD HH:MM:SS`
 
-아래는 `KRW-BTC`의 일봉 데이터 예시입니다.
+Below is an example of daily bar data for `KRW-BTC`.
 
 ```csv
 date,open,high,low,close,volume
@@ -23,35 +23,35 @@ date,open,high,low,close,volume
 ...
 ```
 
-> **💡 팁:** 만약 날짜 컬럼명이 `date`가 아니라 `timestamp`나 `time` 등 다른 이름이라면, `CSVDataProvider`를 생성할 때 `timestamp_column` 인자를 통해 직접 지정할 수 있습니다.
+> **💡 Tip:** If your date column is not named `date` but something else like `timestamp` or `time`, you can specify it directly through the `timestamp_column` argument when creating `CSVDataProvider`.
 
-## 2. `CSVDataProvider` 설정 및 사용법
+## 2. `CSVDataProvider` Configuration and Usage
 
-CSV 파일이 준비되었다면, 백테스트 코드에서 `UpbitDataProvider`를 `CSVDataProvider`로 교체하기만 하면 됩니다.
+Once your CSV files are ready, you simply need to replace `UpbitDataProvider` with `CSVDataProvider` in your backtest code.
 
-가장 중요한 단계는 **어떤 심볼의 어떤 타임프레임이 어떤 파일에 해당하는지**를 딕셔너리 형태로 명확하게 알려주는 것입니다.
+The most important step is to clearly specify **which symbol's which timeframe corresponds to which file** in dictionary format.
 
 ```python
 import sys
 from pathlib import Path
 from datetime import datetime
 
-# --- QuantBT 라이브러리 임포트 ---
+# --- Import QuantBT library ---
 from quantbt import (
     BacktestEngine,
     SimpleBroker,
     BacktestConfig,
-    CSVDataProvider,  # UpbitDataProvider 대신 CSVDataProvider를 임포트합니다.
+    CSVDataProvider,  # Import CSVDataProvider instead of UpbitDataProvider
 )
 
-# 1. 데이터 파일 경로 설정
-# 이 코드는 프로젝트의 루트 디렉토리에서 실행하는 것을 가정합니다.
-# 'data' 폴더를 만들고 그 안에 CSV 파일들을 위치시키세요.
+# 1. Set up data file paths
+# This code assumes execution from the project's root directory.
+# Create a 'data' folder and place your CSV files inside it.
 data_path = Path("data")
 data_files = {
     "KRW-BTC": {
         "1d": str(data_path / "KRW-BTC_1d.csv"),
-        # 만약 분봉 데이터도 있다면 아래와 같이 추가할 수 있습니다.
+        # If you also have minute data, you can add it like below:
         # "1m": str(data_path / "KRW-BTC_1m.csv") 
     },
     "KRW-ETH": {
@@ -59,29 +59,29 @@ data_files = {
     },
 }
 
-# 2. CSVDataProvider 인스턴스 생성
+# 2. Create CSVDataProvider instance
 csv_provider = CSVDataProvider(
     data_files=data_files,
-    timestamp_column="date"  # CSV 파일의 날짜 컬럼명을 지정합니다.
+    timestamp_column="date"  # Specify the date column name in your CSV files
 )
 
-# 3. 백테스트 엔진에 데이터 프로바이더 설정
-# 기존: engine.set_data_provider(UpbitDataProvider())
-# 변경: engine.set_data_provider(csv_provider)
+# 3. Set data provider in backtest engine
+# Before: engine.set_data_provider(UpbitDataProvider())
+# After: engine.set_data_provider(csv_provider)
 
-# ... (이하 백테스트 설정 및 실행 코드는 동일)
+# ... (rest of backtest configuration and execution code remains the same)
 ```
 
-## 3. 자동 리샘플링 기능
+## 3. Automatic Resampling Feature
 
-`CSVDataProvider`는 편리한 자동 리샘플링 기능을 제공합니다.
+`CSVDataProvider` provides a convenient automatic resampling feature.
 
-만약 `data_files` 설정에서 특정 심볼의 일봉(`1d`) 데이터는 제공하지 않았지만, 분봉(`1m`) 데이터는 제공했을 경우, 백테스트에서 해당 심볼의 일봉 데이터를 요청하면 **자동으로 분봉 데이터를 집계하여 일봉 데이터를 생성**해줍니다. 이를 통해 더 유연하게 데이터를 관리하고 다양한 타임프레임 전략을 테스트할 수 있습니다.
+If you didn't provide daily (`1d`) data for a specific symbol in the `data_files` configuration but did provide minute (`1m`) data, when the backtest requests daily data for that symbol, it will **automatically aggregate minute data to generate daily data**. This allows for more flexible data management and testing of various timeframe strategies.
 
-## 4. 전체 예제 코드
+## 4. Complete Example Code
 
-`CSVDataProvider`를 사용하여 멀티 심볼 전략을 실행하는 전체 코드는 아래 예제 파일에서 확인하실 수 있습니다.
+You can check the complete code for executing multi-symbol strategies using `CSVDataProvider` in the example file below.
 
-🔗 **전체 예제 확인하기: [`quantbt/examples/00_csv_dataloader.py`](../examples/00_csv_dataloader.py)**
+🔗 **Check full example: [`quantbt/examples/00_csv_dataloader.py`](../examples/00_csv_dataloader.py)**
 
-이제 `CSVDataProvider`를 사용하여 자신만의 소중한 데이터를 QuantBT 백테스팅에 자유롭게 활용해 보세요! 
+Now use `CSVDataProvider` to freely utilize your valuable data in QuantBT backtesting! 

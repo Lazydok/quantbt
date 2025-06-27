@@ -1,7 +1,7 @@
 """
-그리드 서치 결과
+Grid Search Result
 
-병렬 백테스팅 그리드 서치 결과를 담는 값 객체입니다.
+Value object that contains the results of parallel backtesting grid search.
 """
 
 from dataclasses import dataclass
@@ -16,8 +16,8 @@ from .backtest_result import BacktestResult
 
 @dataclass(frozen=True)
 class GridSearchSummary:
-    """개별 백테스트 요약 결과"""
-    params: Dict[str, Any]  # 전략 파라미터들
+    """Individual backtest summary result"""
+    params: Dict[str, Any]  # Strategy parameters
     calmar_ratio: float
     annual_return: float
     max_drawdown: float
@@ -30,7 +30,7 @@ class GridSearchSummary:
     final_equity: float
     
     def to_dict(self) -> Dict[str, Any]:
-        """딕셔너리로 변환"""
+        """Convert to dictionary"""
         result = {
             "calmar_ratio": self.calmar_ratio,
             "annual_return": self.annual_return,
@@ -43,58 +43,58 @@ class GridSearchSummary:
             "volatility": self.volatility,
             "final_equity": self.final_equity
         }
-        # 파라미터들도 포함
+        # Include parameters as well
         result.update(self.params)
         return result
 
 
 @dataclass(frozen=True)
 class GridSearchResult:
-    """그리드 서치 결과"""
+    """Grid search result"""
     
-    # 기본 정보
+    # Basic information
     config: GridSearchConfig
     start_time: datetime
     end_time: datetime
     
-    # 결과 요약
-    summaries: List[GridSearchSummary]  # 모든 백테스트 요약
+    # Result summary
+    summaries: List[GridSearchSummary]  # All backtest summaries
     
-    # 최적 결과
-    best_params: Dict[str, Any]  # 최적 파라미터 조합
+    # Optimal result
+    best_params: Dict[str, Any]  # Optimal parameter combination
     best_summary: GridSearchSummary
     
-    # 상위 결과들 (선택적으로 상세 결과 포함)
+    # Top results (optionally include detailed results)
     top_results: Optional[List[BacktestResult]] = None
     
-    # 실행 통계
+    # Execution statistics
     total_executed: int = 0
     successful_runs: int = 0
     failed_runs: int = 0
     
-    # 메타데이터
+    # Metadata
     metadata: Optional[Dict[str, Any]] = None
     
     @property
     def duration(self) -> float:
-        """실행 시간 (초)"""
+        """Execution time (seconds)"""
         return (self.end_time - self.start_time).total_seconds()
     
     @property
     def success_rate(self) -> float:
-        """성공률"""
+        """Success rate"""
         if self.total_executed == 0:
             return 0.0
         return self.successful_runs / self.total_executed
     
     @property
     def results_df(self) -> pl.DataFrame:
-        """결과를 DataFrame으로 변환"""
+        """Convert results to DataFrame"""
         data = [summary.to_dict() for summary in self.summaries]
         return pl.DataFrame(data)
     
     def get_top_n_summaries(self, n: int = 10, metric: str = "calmar_ratio") -> List[GridSearchSummary]:
-        """상위 N개 결과 반환"""
+        """Return top N results"""
         sorted_summaries = sorted(
             self.summaries,
             key=lambda x: getattr(x, metric, 0),
@@ -103,7 +103,7 @@ class GridSearchResult:
         return sorted_summaries[:n]
     
     def get_metric_statistics(self, metric: str = "calmar_ratio") -> Dict[str, float]:
-        """지표별 통계 정보"""
+        """Statistical information by metric"""
         values = [getattr(summary, metric, 0) for summary in self.summaries]
         if not values:
             return {}
@@ -119,19 +119,19 @@ class GridSearchResult:
         }
     
     def print_summary(self, top_n: int = 10) -> None:
-        """결과 요약 출력"""
+        """Print result summary"""
         print("=" * 80)
         print("                    GRID SEARCH RESULTS SUMMARY")
         print("=" * 80)
         
-        print(f"실행 시간: {self.duration:.1f}초")
-        print(f"총 실행: {self.total_executed}개")
-        print(f"성공: {self.successful_runs}개")
-        print(f"실패: {self.failed_runs}개")
-        print(f"성공률: {self.success_rate:.1%}")
+        print(f"Execution time: {self.duration:.1f}s")
+        print(f"Total executed: {self.total_executed}")
+        print(f"Successful: {self.successful_runs}")
+        print(f"Failed: {self.failed_runs}")
+        print(f"Success rate: {self.success_rate:.1%}")
         print()
         
-        print(f"최적 파라미터 (Calmar Ratio 기준):")
+        print(f"Optimal parameters (based on Calmar Ratio):")
         for param_name, param_value in self.best_params.items():
             print(f"  {param_name}: {param_value}")
         print(f"  Calmar Ratio: {self.best_summary.calmar_ratio:.3f}")
@@ -140,24 +140,24 @@ class GridSearchResult:
         print(f"  Sharpe Ratio: {self.best_summary.sharpe_ratio:.3f}")
         print()
         
-        # Calmar Ratio 통계
+        # Calmar Ratio statistics
         calmar_stats = self.get_metric_statistics("calmar_ratio")
-        print("Calmar Ratio 분포:")
-        print(f"  평균: {calmar_stats.get('mean', 0):.3f}")
-        print(f"  표준편차: {calmar_stats.get('std', 0):.3f}")
-        print(f"  최대: {calmar_stats.get('max', 0):.3f}")
-        print(f"  최소: {calmar_stats.get('min', 0):.3f}")
+        print("Calmar Ratio distribution:")
+        print(f"  Mean: {calmar_stats.get('mean', 0):.3f}")
+        print(f"  Std: {calmar_stats.get('std', 0):.3f}")
+        print(f"  Max: {calmar_stats.get('max', 0):.3f}")
+        print(f"  Min: {calmar_stats.get('min', 0):.3f}")
         print()
         
-        # 상위 결과 
+        # Top results
         top_results = self.get_top_n_summaries(top_n)
-        print(f"상위 {len(top_results)}개 결과:")
+        print(f"Top {len(top_results)} results:")
         print("-" * 120)
         
-        # 헤더 출력 (파라미터들 + 성과지표들)
+        # Print header (parameters + performance metrics)
         header = f"{'Rank':>4} "
         if top_results:
-            # 첫 번째 결과의 파라미터들로 헤더 구성
+            # Construct header with parameters from first result
             for param_name in top_results[0].params.keys():
                 header += f"{param_name:>8} "
         header += f"{'Calmar':>8} {'Annual':>8} {'MaxDD':>8} {'Sharpe':>8} {'Trades':>7}"
@@ -166,10 +166,10 @@ class GridSearchResult:
         
         for i, summary in enumerate(top_results, 1):
             row = f"{i:>4} "
-            # 파라미터 값들 출력
+            # Print parameter values
             for param_value in summary.params.values():
                 row += f"{param_value:>8} "
-            # 성과 지표들 출력  
+            # Print performance metrics
             row += (f"{summary.calmar_ratio:>8.3f} {summary.annual_return:>7.2%} "
                    f"{summary.max_drawdown:>7.2%} {summary.sharpe_ratio:>8.3f} "
                    f"{summary.total_trades:>7}")
@@ -182,27 +182,27 @@ class GridSearchResult:
                      y_param: str, 
                      metric: str = "calmar_ratio", 
                      figsize: tuple = (12, 8)) -> None:
-        """파라미터 조합별 성과 히트맵"""
+        """Performance heatmap by parameter combination"""
         try:
             import plotly.graph_objects as go
             import plotly.express as px
         except ImportError:
-            print("시각화를 위해 plotly를 설치해주세요: pip install plotly")
+            print("Please install plotly for visualization: pip install plotly")
             return
         
-        # 데이터 준비
+        # Prepare data
         df = self.results_df.to_pandas()
         
-        # 지정된 파라미터들이 데이터에 있는지 확인
+        # Check if specified parameters exist in data
         if x_param not in df.columns or y_param not in df.columns:
-            print(f"파라미터 {x_param} 또는 {y_param}을 찾을 수 없습니다.")
-            print(f"사용 가능한 파라미터: {[col for col in df.columns if col not in ['calmar_ratio', 'annual_return', 'max_drawdown', 'sharpe_ratio', 'total_trades', 'win_rate', 'profit_factor', 'total_return', 'volatility', 'final_equity']]}")
+            print(f"Parameter {x_param} or {y_param} not found.")
+            print(f"Available parameters: {[col for col in df.columns if col not in ['calmar_ratio', 'annual_return', 'max_drawdown', 'sharpe_ratio', 'total_trades', 'win_rate', 'profit_factor', 'total_return', 'volatility', 'final_equity']]}")
             return
         
-        # 피벗 테이블 생성
+        # Create pivot table
         heatmap_data = df.pivot(index=y_param, columns=x_param, values=metric)
         
-        # 히트맵 생성
+        # Create heatmap
         fig = go.Figure(data=go.Heatmap(
             z=heatmap_data.values,
             x=heatmap_data.columns,
@@ -214,7 +214,7 @@ class GridSearchResult:
             hoverongaps=False
         ))
         
-        # 최적점 표시
+        # Mark optimal point
         best_x = self.best_params.get(x_param)
         best_y = self.best_params.get(y_param)
         if best_x is not None and best_y is not None:
@@ -242,11 +242,11 @@ class GridSearchResult:
         fig.show()
     
     def plot_distribution(self, metric: str = "calmar_ratio", bins: int = 30) -> None:
-        """성과 지표 분포 히스토그램"""
+        """Performance metric distribution histogram"""
         try:
             import plotly.graph_objects as go
         except ImportError:
-            print("시각화를 위해 plotly를 설치해주세요: pip install plotly")
+            print("Please install plotly for visualization: pip install plotly")
             return
         
         values = [getattr(summary, metric, 0) for summary in self.summaries]
@@ -259,7 +259,7 @@ class GridSearchResult:
             opacity=0.7
         )])
         
-        # 최적값 표시
+        # Mark optimal value
         best_value = getattr(self.best_summary, metric, 0)
         fig.add_vline(
             x=best_value,
@@ -268,7 +268,7 @@ class GridSearchResult:
             annotation_text=f"Best: {best_value:.3f}"
         )
         
-        # 통계 정보 추가
+        # Add statistical information
         stats = self.get_metric_statistics(metric)
         fig.add_annotation(
             x=0.7, y=0.9,
@@ -293,7 +293,7 @@ class GridSearchResult:
         fig.show()
     
     def to_dict(self) -> Dict[str, Any]:
-        """딕셔너리로 변환"""
+        """Convert to dictionary"""
         return {
             "config": self.config.to_dict(),
             "start_time": self.start_time,

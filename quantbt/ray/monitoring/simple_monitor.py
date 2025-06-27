@@ -1,7 +1,7 @@
 """
-SimpleMonitor - 백테스트 성능 통계 수집기
+SimpleMonitor - Backtest Performance Statistics Collector
 
-백테스트 결과를 수집하고 기본적인 성능 통계를 계산하는 클래스입니다.
+A class that collects backtest results and calculates basic performance statistics.
 """
 
 import threading
@@ -9,56 +9,56 @@ from typing import Dict, List, Any, Optional
 
 
 class SimpleMonitor:
-    """백테스트 성능 통계 수집 및 관리 클래스
+    """Backtest performance statistics collection and management class
     
-    주요 기능:
-    - 백테스트 결과 기록
-    - 최고 성과 추적
-    - 기본 통계 계산
-    - 스레드 안전성 보장
+    Main features:
+    - Record backtest results
+    - Track best performance
+    - Calculate basic statistics
+    - Ensure thread safety
     """
     
     def __init__(self):
-        """SimpleMonitor 초기화"""
+        """Initialize SimpleMonitor"""
         self.results: List[Dict] = []
         self.best_performance: Optional[Dict] = None
         
-        # 스레드 안전성을 위한 락
+        # Lock for thread safety
         self._lock = threading.Lock()
         
-        # 통계 캐시
+        # Statistics cache
         self._stats_cache: Optional[Dict] = None
         self._cache_valid = False
     
     def record_result(self, result: Dict):
-        """백테스트 결과 기록
+        """Record backtest result
         
         Args:
-            result: 백테스트 결과 딕셔너리
+            result: Backtest result dictionary
         """
         with self._lock:
             self.results.append(result.copy())
             self._cache_valid = False
             
-            # 최고 성과 업데이트 (샤프 비율 기준)
+            # Update best performance (based on Sharpe ratio)
             sharpe_ratio = result.get('sharpe_ratio', float('-inf'))
             if self.best_performance is None or sharpe_ratio > self.best_performance.get('sharpe_ratio', float('-inf')):
                 self.best_performance = result.copy()
     
     def get_best_performance(self) -> Optional[Dict]:
-        """최고 성과 반환
+        """Return best performance
         
         Returns:
-            Dict: 최고 성과 딕셔너리 또는 None
+            Dict: Best performance dictionary or None
         """
         with self._lock:
             return self.best_performance.copy() if self.best_performance else None
     
     def get_statistics(self) -> Dict:
-        """통계 요약 반환
+        """Return statistics summary
         
         Returns:
-            Dict: 통계 요약
+            Dict: Statistics summary
         """
         with self._lock:
             if self._cache_valid and self._stats_cache:
@@ -75,13 +75,13 @@ class SimpleMonitor:
                     'avg_execution_time': 0.0
                 }
             
-            # 통계 계산
+            # Calculate statistics
             total_results = len(self.results)
             success_count = sum(1 for r in self.results if r.get('success', True))
             failure_count = total_results - success_count
             success_rate = success_count / total_results if total_results > 0 else 0.0
             
-            # 성공한 결과만 대상으로 평균 계산
+            # Calculate averages for successful results only
             successful_results = [r for r in self.results if r.get('success', True)]
             
             if successful_results:
@@ -91,7 +91,7 @@ class SimpleMonitor:
                 avg_sharpe_ratio = 0.0
                 avg_return = 0.0
             
-            # 실행 시간 평균 (모든 결과 대상)
+            # Average execution time (for all results)
             avg_execution_time = sum(r.get('execution_time', 0) for r in self.results) / total_results
             
             self._stats_cache = {
@@ -108,29 +108,29 @@ class SimpleMonitor:
             return self._stats_cache.copy()
     
     def format_summary(self) -> str:
-        """통계 요약 문자열 반환
+        """Return formatted statistics summary
         
         Returns:
-            str: 포맷된 통계 요약
+            str: Formatted statistics summary
         """
         stats = self.get_statistics()
         best = self.get_best_performance()
         
-        summary = f"""📊 현재 성과:
-   총 결과: {stats['total_results']}개
-   성공률: {stats['success_rate']:.1%}
-   평균 샤프비율: {stats['avg_sharpe_ratio']:.4f}
-   평균 수익률: {stats['avg_return']:.4f}
-   평균 실행시간: {stats['avg_execution_time']:.2f}초"""
+        summary = f"""📊 Current Performance:
+   Total Results: {stats['total_results']}
+   Success Rate: {stats['success_rate']:.1%}
+   Average Sharpe Ratio: {stats['avg_sharpe_ratio']:.4f}
+   Average Return: {stats['avg_return']:.4f}
+   Average Execution Time: {stats['avg_execution_time']:.2f}s"""
         
         if best:
             summary += f"""
-   최고 샤프비율: {best.get('sharpe_ratio', 0):.4f}"""
+   Best Sharpe Ratio: {best.get('sharpe_ratio', 0):.4f}"""
             if 'params' in best:
-                summary += f" (파라메터: {best['params']})"
+                summary += f" (Parameters: {best['params']})"
         
         if stats['failure_count'] > 0:
             summary += f"""
-   실패: {stats['failure_count']}개"""
+   Failures: {stats['failure_count']}"""
         
         return summary 

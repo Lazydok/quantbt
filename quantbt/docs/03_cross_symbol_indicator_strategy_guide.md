@@ -1,24 +1,24 @@
-# 튜토리얼 3: 크로스 심볼 지표 전략
+# Tutorial 3: Cross-Symbol Indicator Strategy
 
-이번 튜토리얼에서는 한 종목의 기술적 지표를 사용하여 다른 종목의 거래 신호를 생성하는 '크로스 심볼(Cross-symbol)' 전략을 구현하는 방법을 알아봅니다. 예를 들어, 여러 알트코인 중 변동성이 가장 높은 코인만 골라서 거래하는 것과 같은 고급 전략을 구현할 수 있습니다.
+This tutorial explores how to implement 'cross-symbol' strategies that use technical indicators from one symbol to generate trading signals for another symbol. For example, you can implement advanced strategies like trading only the most volatile coin among multiple altcoins.
 
-> 전체 코드는 아래 Jupyter Notebook 링크에서 확인하고 직접 실행해볼 수 있습니다.
+> You can check the complete code and run it directly from the Jupyter Notebook link below.
 >
-> 👉 **[예제 노트북 바로가기: 03_cross_symbol_indicator_strategy.ipynb](../examples/03_cross_symbol_indicator_strategy.ipynb)**
+> 👉 **[Example Notebook Link: 03_cross_symbol_indicator_strategy.ipynb](../examples/03_cross_symbol_indicator_strategy.ipynb)**
 
-## 1. 크로스 심볼 전략의 개념
+## 1. Cross-Symbol Strategy Concept
 
-크로스 심볼 전략은 여러 종목의 데이터를 종합적으로 분석하여 투자 결정을 내리는 방식입니다. 시장 전체의 분위기를 주도하는 자산(예: BTC)을 기준으로 다른 자산을 거래하거나, 여러 자산 중 특정 조건을 만족하는 대상만 선택하여 거래하는 데 사용됩니다. 이를 통해 더 정교한 신호를 포착하여 거래의 효율성을 높일 수 있습니다.
+Cross-symbol strategies make investment decisions by comprehensively analyzing data from multiple symbols. They can be used to trade other assets based on market-leading assets (e.g., BTC), or to select and trade only targets that meet specific conditions among multiple assets. This allows for capturing more sophisticated signals and improving trading efficiency.
 
-## 2. 백테스팅 과정
+## 2. Backtesting Process
 
-### 단계 1: 크로스 심볼 로직을 포함한 커스텀 전략 생성
+### Step 1: Create Custom Strategy with Cross-Symbol Logic
 
-QuantBT의 `TradingStrategy`를 상속받아 커스텀 전략을 만듭니다. 크로스 심볼 로직은 주로 지표 계산 단계에서 구현됩니다.
+Create a custom strategy by inheriting from QuantBT's `TradingStrategy`. Cross-symbol logic is mainly implemented in the indicator calculation phase.
 
-- **`_compute_indicators_for_symbol`**: 백테스팅 시작 전, 각 종목에 필요한 개별 지표(예: 이동평균, 변동성)를 계산합니다.
-- **`_compute_cross_symbol_indicators`**: 모든 종목의 데이터가 합쳐진 상태에서, 종목 간 비교를 통해 새로운 지표(예: 변동성 순위)를 생성합니다. `polars`의 윈도우 함수 `over("timestamp")`가 핵심적인 역할을 합니다.
-- **`generate_signals`**: 각 시점에서 데이터를 기반으로, 크로스 심볼 지표(변동성 순위)를 조건으로 사용하여 거래 주문을 생성합니다.
+- **`_compute_indicators_for_symbol`**: Before backtesting starts, calculates individual indicators (e.g., moving averages, volatility) for each symbol.
+- **`_compute_cross_symbol_indicators`**: With all symbols' data combined, generates new indicators (e.g., volatility ranking) through inter-symbol comparisons. Polars' window function `over("timestamp")` plays a crucial role.
+- **`generate_signals`**: At each time point, generates trading orders using cross-symbol indicators (volatility ranking) as conditions based on the data.
 
 ```python
 import polars as pl
@@ -30,17 +30,17 @@ class VolatilityBasedStrategy(TradingStrategy):
         self.volatility_window = volatility_window
 
     def _compute_indicators_for_symbol(self, symbol_data):
-        # 각 심볼의 이동평균과 변동성을 계산
+        # Calculate moving averages and volatility for each symbol
         data = symbol_data.sort("timestamp")
         volatility = data["close"].pct_change().rolling_std(window_size=self.volatility_window)
-        # ... 다른 지표들 ...
+        # ... other indicators ...
         return data.with_columns([
             volatility.alias("volatility"),
             # ...
         ])
 
     def _compute_cross_symbol_indicators(self, data: pl.DataFrame):
-        # 타임스탬프별로 모든 종목의 변동성 순위를 계산
+        # Calculate volatility ranking for all symbols by timestamp
         return data.with_columns(
             pl.col("volatility")
             .rank("ordinal", descending=True)
@@ -50,23 +50,23 @@ class VolatilityBasedStrategy(TradingStrategy):
 
     def generate_signals(self, data: dict):
         orders = []
-        # 변동성 순위가 1위인 종목만 거래
+        # Trade only symbols with volatility rank #1
         if data.get('vol_rank') == 1:
-            # ... 매수/매도 조건 ...
+            # ... buy/sell conditions ...
             # if condition:
             #     orders.append(Order(...))
         return orders
 ```
 
-### 단계 2: 백테스팅 실행
+### Step 2: Execute Backtesting
 
-생성한 커스텀 전략을 사용하여 백테스팅을 실행합니다. `BacktestConfig`에 분석할 모든 종목(`"KRW-BTC"`, `"KRW-ETH"`)을 지정합니다.
+Execute backtesting using the custom strategy created above. Specify all symbols to analyze (`"KRW-BTC"`, `"KRW-ETH"`) in `BacktestConfig`.
 
 ```python
 from datetime import datetime
 from quantbt import BacktestEngine, BacktestConfig, UpbitDataProvider, SimpleBroker
 
-# 1. 백테스팅 설정
+# 1. Configure backtesting
 config = BacktestConfig(
     symbols=["KRW-BTC", "KRW-ETH"],
     start_date=datetime(2023, 1, 1),
@@ -76,12 +76,12 @@ config = BacktestConfig(
     commission_rate=0.001
 )
 
-# 2. 구성 요소 초기화
+# 2. Initialize components
 data_provider = UpbitDataProvider()
-strategy = VolatilityBasedStrategy() # 위에서 정의한 전략
+strategy = VolatilityBasedStrategy() # Strategy defined above
 broker = SimpleBroker(initial_cash=config.initial_cash)
 
-# 3. 백테스트 엔진 설정 및 실행
+# 3. Set up and run backtest engine
 engine = BacktestEngine()
 engine.set_strategy(strategy)
 engine.set_data_provider(data_provider)
@@ -90,19 +90,19 @@ engine.set_broker(broker)
 result = engine.run(config)
 ```
 
-## 3. 결과 분석
+## 3. Result Analysis
 
-결과 분석은 일반적인 백테스팅과 동일합니다. `result.trades`를 통해 어떤 종목이 어떤 시점에 거래되었는지 확인할 수 있습니다.
+Result analysis is the same as regular backtesting. You can check which symbols were traded at which time points through `result.trades`.
 
 ```python
-# 전체 포트폴리오 성과 요약
+# Overall portfolio performance summary
 result.print_summary()
 
-# 포트폴리오 수익 곡선 시각화
+# Visualize portfolio performance curve
 result.plot_portfolio_performance()
 
-# 거래 내역 확인
+# Check trade history
 print(result.trades)
 ```
 
-이 가이드를 통해 서로 다른 종목을 연계하는 복잡한 전략도 QuantBT로 손쉽게 구현하고 검증할 수 있음을 확인했습니다. 다음 장에서는 여러 시간 프레임을 동시에 분석하는 멀티 타임프레임 전략을 살펴보겠습니다. 
+Through this guide, you've confirmed that even complex strategies linking different symbols can be easily implemented and validated with QuantBT. In the next chapter, we'll explore multi-timeframe strategies that analyze multiple time frames simultaneously. 

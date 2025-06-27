@@ -711,7 +711,7 @@ class BacktestResult:
                         styled_df = df.style
                     
                     # Display in Jupyter notebook
-                    display(HTML("<h3>📊 전략 성과 비교표</h3>"))
+                    display(HTML("<h3>📊 Strategy Performance Comparison</h3>"))
                     display(styled_df)
                     return
             except:
@@ -719,7 +719,7 @@ class BacktestResult:
             
             # Fallback to text output for non-Jupyter environments
             print("\n" + "=" * 60)
-            print("                📊 전략 성과 비교표")
+            print("                📊 Strategy Performance Comparison")
             print("=" * 60)
             
             # Calculate column widths for better formatting
@@ -756,8 +756,8 @@ class BacktestResult:
             print("=" * 60)
             
         except Exception as e:
-            print(f"❌ 성과 비교표 생성 중 오류 발생: {e}")
-            print("기본 성과 요약을 대신 출력합니다:")
+            print(f"❌ Error occurred while generating performance comparison: {e}")
+            print("Displaying basic performance summary instead:")
             self.print_summary()
     
     def _resample_to_daily(self, dates, values, mode='last'):

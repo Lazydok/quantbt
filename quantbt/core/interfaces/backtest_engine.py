@@ -1,7 +1,7 @@
 """
-백테스팅 엔진 인터페이스
+Backtesting Engine Interface
 
-백테스팅 실행을 위한 핵심 인터페이스들을 정의합니다.
+Defines core interfaces for backtesting execution.
 """
 
 from abc import ABC, abstractmethod
@@ -17,54 +17,54 @@ from ..value_objects.backtest_result import BacktestResult
 
 
 class IBacktestEngine(Protocol):
-    """백테스팅 엔진 인터페이스"""
+    """Backtesting engine interface"""
     
     def set_strategy(self, strategy: IStrategy) -> None:
-        """전략 설정
+        """Set strategy
         
         Args:
-            strategy: 백테스팅에 사용할 전략
+            strategy: Strategy to use for backtesting
         """
         ...
     
     def set_data_provider(self, data_provider: IDataProvider) -> None:
-        """데이터 제공자 설정
+        """Set data provider
         
         Args:
-            data_provider: 시장 데이터 제공자
+            data_provider: Market data provider
         """
         ...
     
     def set_broker(self, broker: IBroker) -> None:
-        """브로커 설정
+        """Set broker
         
         Args:
-            broker: 주문 실행 브로커
+            broker: Order execution broker
         """
         ...
     
     def run(self, config: BacktestConfig) -> BacktestResult:
-        """백테스팅 실행
+        """Run backtesting
         
         Args:
-            config: 백테스팅 설정
+            config: Backtesting configuration
             
         Returns:
-            백테스팅 결과
+            Backtesting result
         """
         ...
     
     def add_progress_callback(self, callback: Callable[[float, str], None]) -> None:
-        """진행률 콜백 추가
+        """Add progress callback
         
         Args:
-            callback: 진행률 콜백 함수 (progress: float, message: str)
+            callback: Progress callback function (progress: float, message: str)
         """
         ...
 
 
 class BacktestEngineBase(ABC):
-    """백테스팅 엔진 기본 클래스"""
+    """Base backtesting engine class"""
     
     def __init__(self, name: str = "BacktestEngine"):
         self.name = name
@@ -75,50 +75,50 @@ class BacktestEngineBase(ABC):
         self._is_running = False
         
     def set_strategy(self, strategy: IStrategy) -> None:
-        """전략 설정"""
+        """Set strategy"""
         self.strategy = strategy
         
     def set_data_provider(self, data_provider: IDataProvider) -> None:
-        """데이터 제공자 설정"""
+        """Set data provider"""
         self.data_provider = data_provider
         
     def set_broker(self, broker: IBroker) -> None:
-        """브로커 설정"""
+        """Set broker"""
         self.broker = broker
         
     def add_progress_callback(self, callback: Callable[[float, str], None]) -> None:
-        """진행률 콜백 추가"""
+        """Add progress callback"""
         self.progress_callbacks.append(callback)
     
     def _notify_progress(self, progress: float, message: str) -> None:
-        """진행률 알림"""
+        """Notify progress"""
         for callback in self.progress_callbacks:
             try:
                 callback(progress, message)
             except Exception as e:
-                pass  # 콜백 에러는 조용히 무시
+                pass  # Silently ignore callback errors
     
     def create_progress_bar(self, total: int, desc: str = "Processing", disable: bool = False) -> tqdm:
-        """tqdm 진행률 바 생성
+        """Create tqdm progress bar
         
         Args:
-            total: 전체 항목 수
-            desc: 진행률 바 설명
-            disable: 진행률 바 비활성화 여부
+            total: Total number of items
+            desc: Progress bar description
+            disable: Whether to disable progress bar
             
         Returns:
-            tqdm 진행률 바 객체
+            tqdm progress bar object
         """
         return tqdm(total=total, desc=desc, unit="item", 
                    bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
                    disable=disable)
     
     def update_progress_bar(self, pbar: tqdm, message: str = "") -> None:
-        """tqdm 진행률 바 업데이트 및 콜백 알림
+        """Update tqdm progress bar and notify callbacks
         
         Args:
-            pbar: tqdm 진행률 바 객체
-            message: 추가 메시지
+            pbar: tqdm progress bar object
+            message: Additional message
         """
         pbar.update(1)
         if message:
@@ -130,7 +130,7 @@ class BacktestEngineBase(ABC):
             self._notify_progress(progress, current_desc)
     
     def _validate_components(self) -> None:
-        """컴포넌트 유효성 검증"""
+        """Validate components"""
         if self.strategy is None:
             raise ValueError("Strategy not set")
         if self.data_provider is None:
@@ -140,22 +140,22 @@ class BacktestEngineBase(ABC):
     
     @abstractmethod
     def _execute_backtest(self, config: BacktestConfig) -> BacktestResult:
-        """백테스팅 실행 - 서브클래스에서 구현
+        """Execute backtesting - to be implemented by subclasses
         
-        예시 사용법:
-            # 데이터 개수 확인
+        Example usage:
+            # Check data count
             data_count = len(market_data)
             
-            # tqdm 진행률 바 생성
-            pbar = self.create_progress_bar(data_count, "백테스팅 진행")
+            # Create tqdm progress bar
+            pbar = self.create_progress_bar(data_count, "Backtesting Progress")
             
             try:
                 for i, data_point in enumerate(market_data):
-                    # 백테스팅 로직 수행
+                    # Perform backtesting logic
                     self._process_data_point(data_point)
                     
-                    # 진행률 업데이트
-                    self.update_progress_bar(pbar, f"처리중... {i+1}/{data_count}")
+                    # Update progress
+                    self.update_progress_bar(pbar, f"Processing... {i+1}/{data_count}")
                     
             finally:
                 pbar.close()
@@ -163,17 +163,17 @@ class BacktestEngineBase(ABC):
         pass
     
     def run(self, config: BacktestConfig) -> BacktestResult:
-        """백테스팅 실행"""
+        """Run backtesting"""
         if self._is_running:
             raise RuntimeError("Backtest is already running")
         
         try:
             self._is_running = True
             
-            # 컴포넌트 유효성 검증
+            # Validate components
             self._validate_components()
             
-            # 백테스팅 실행
+            # Execute backtesting
             result = self._execute_backtest(config)
             
             return result
@@ -182,5 +182,5 @@ class BacktestEngineBase(ABC):
     
     @property
     def is_running(self) -> bool:
-        """실행 중 여부"""
+        """Whether running"""
         return self._is_running 

@@ -355,8 +355,8 @@ class BacktestEngine(BacktestEngineBase):
         # 포트폴리오 평가금 추적 초기화
         self._portfolio_equity_history = {}
         
-        # 프로그레스바 생성
-        pbar = self.create_progress_bar(len(enriched_df), "백테스팅 진행", disable=not show_progress)
+        # Create progress bar
+        pbar = self.create_progress_bar(len(enriched_df), "Backtesting Progress", disable=not show_progress)
         
         try:
             # DataFrame 스트리밍 처리
@@ -388,8 +388,8 @@ class BacktestEngine(BacktestEngineBase):
                 # 포트폴리오 평가금 기록
                 self._calculate_and_store_portfolio_equity(row_data, config)
                 
-                # 진행상황 업데이트
-                self.update_progress_bar(pbar, f"처리중... {i+1}/{len(enriched_df)}")
+                # Update progress
+                self.update_progress_bar(pbar, f"Processing... {i+1}/{len(enriched_df)}")
         
         finally:
             pbar.close()
@@ -539,14 +539,14 @@ class BacktestEngine(BacktestEngineBase):
         }
     
     def _get_portfolio_equity_history(self) -> List[float]:
-        """실시간 포트폴리오 평가금 데이터 반환 (최적화)"""
+        """Return real-time portfolio equity data (optimized)"""
         
-        # 실시간 포트폴리오 평가금 데이터가 있는지 확인
+        # Check if real-time portfolio equity data exists
         if hasattr(self, '_portfolio_equity_history') and self._portfolio_equity_history:
             return list(self._portfolio_equity_history.values())
         
-        # 없으면 오류
-        raise ValueError("실시간 포트폴리오 평가금 데이터가 없습니다. save_portfolio_history=True로 설정하거나 백테스팅을 다시 실행하세요.")
+        # If not available, raise error
+        raise ValueError("Real-time portfolio equity data is not available. Set save_portfolio_history=True or re-run backtesting.")
         
     
     def _calculate_max_drawdown(self, equity_curve: List[float]) -> float:
@@ -594,7 +594,7 @@ class BacktestEngine(BacktestEngineBase):
             
             return monthly_returns.select(["timestamp", "return"])
         except Exception as e:
-            print(f"월간 수익률 계산 중 오류: {e}")
+            print(f"Error calculating monthly returns: {e}")
             return None
     
     def _calculate_drawdown_periods(self, equity_curve: pl.DataFrame) -> Optional[pl.DataFrame]:
@@ -620,7 +620,7 @@ class BacktestEngine(BacktestEngineBase):
                 "drawdown": drawdown
             })
         except Exception as e:
-            print(f"드로다운 계산 중 오류: {e}")
+            print(f"Error calculating drawdown: {e}")
             return None
     
     def _create_trade_signals(self, trades: List[Trade]) -> Optional[pl.DataFrame]:
@@ -641,7 +641,7 @@ class BacktestEngine(BacktestEngineBase):
             
             return pl.DataFrame(signal_data)
         except Exception as e:
-            print(f"거래 신호 데이터 생성 중 오류: {e}")
+            print(f"Error creating trade signals data: {e}")
             return None
     
     def _create_benchmark_data(self, config: BacktestConfig, 
@@ -936,7 +936,7 @@ class BacktestEngine(BacktestEngineBase):
     def _calculate_performance_metrics_dict_optimized(self, config: BacktestConfig, 
                                                     trade_objects: List[Trade],
                                                     portfolio_equity_history: Dict[datetime, float]) -> Dict[str, float]:
-        """실시간 포트폴리오 평가금 데이터를 활용한 최적화된 성과 지표 계산"""
+        """Optimized performance metrics calculation using real-time portfolio equity data"""
         
         # 기본 수익률 계산
         initial_cash = config.initial_cash
@@ -953,7 +953,7 @@ class BacktestEngine(BacktestEngineBase):
         else:
             annual_return = 0.0
         
-        # 이미 계산된 실시간 포트폴리오 평가금으로 변동성 및 MDD 계산
+        # Calculate volatility and MDD using pre-calculated real-time portfolio equity
         if portfolio_equity_history and len(portfolio_equity_history) > 1:
             equity_values = list(portfolio_equity_history.values())
             
@@ -1114,21 +1114,21 @@ class BacktestEngine(BacktestEngineBase):
         )
     
     def _execute_backtest(self, config: BacktestConfig, show_progress: bool) -> BacktestResult:
-        """백테스팅 실행
+        """Execute backtesting
         
         Args:
-            config: 백테스팅 설정
-            show_progress: 진행률 바 표시 여부 (기본값: True)
+            config: Backtesting configuration
+            show_progress: Whether to show progress bar (default: True)
             
         Returns:
-            백테스트 결과
+            Backtest result
         """
         if not self.strategy:
-            raise ValueError("전략이 설정되지 않았습니다")
+            raise ValueError("Strategy is not configured")
         if not self.broker:
-            raise ValueError("브로커가 설정되지 않았습니다")
+            raise ValueError("Broker is not configured")
         if not self.data_provider:
-            raise ValueError("데이터 제공자가 설정되지 않았습니다")
+            raise ValueError("Data provider is not configured")
         
         total_start_time = datetime.now()
 
@@ -1268,8 +1268,8 @@ class BacktestEngine(BacktestEngineBase):
         # 🚀 최적화: 멀티 타임프레임 인덱스 초기화
         self._initialize_multi_timeframe_indices(enriched_multi_data)
         
-        # 프로그레스바 생성
-        pbar = self.create_progress_bar(len(primary_df), "멀티 타임프레임 백테스팅 진행", disable=not show_progress)
+        # Create progress bar
+        pbar = self.create_progress_bar(len(primary_df), "Multi-Timeframe Backtesting Progress", disable=not show_progress)
         
         try:
             for i, primary_row in enumerate(primary_df.iter_rows(named=True)):
@@ -1407,13 +1407,13 @@ class BacktestEngine(BacktestEngineBase):
         return result
     
     def _execute_multi_timeframe_backtest(self, config: BacktestConfig, show_progress: bool) -> BacktestResult:
-        """멀티 타임프레임 백테스트 실행"""
+        """Execute multi-timeframe backtest"""
         if not self.strategy:
-            raise ValueError("전략이 설정되지 않았습니다")
+            raise ValueError("Strategy is not configured")
         if not self.broker:
-            raise ValueError("브로커가 설정되지 않았습니다")
+            raise ValueError("Broker is not configured")
         if not self.data_provider:
-            raise ValueError("데이터 제공자가 설정되지 않았습니다")
+            raise ValueError("Data provider is not configured")
         
         total_start_time = datetime.now()
         

@@ -1,23 +1,23 @@
-# 튜토리얼 1: 간단한 전략 백테스팅
+# Tutorial 1: Simple Strategy Backtesting
 
-이 튜토리얼에서는 QuantBT를 사용하여 단일 종목에 대한 간단한 이동평균 교차 전략을 백테스팅하는 과정을 안내합니다. QuantBT의 가장 기본적인 사용법을 익힐 수 있습니다.
+This tutorial guides you through the process of backtesting a simple moving average crossover strategy for a single symbol using QuantBT. You'll learn the most basic usage of QuantBT.
 
->  전체 코드는 아래 Jupyter Notebook 링크에서 확인하고 직접 실행해볼 수 있습니다.
+> You can check the complete code and run it directly from the Jupyter Notebook link below.
 >
-> 👉 **[예제 노트북 바로가기: 01_simple_strategy.ipynb](../examples/01_simple_strategy.ipynb)**
+> 👉 **[Example Notebook Link: 01_simple_strategy.ipynb](../examples/01_simple_strategy.ipynb)**
 
-## 1. 기본 개념
+## 1. Basic Concepts
 
-- **데이터 프로바이더 (Data Provider)**: 백테스팅에 필요한 가격 데이터(OHLCV)를 제공합니다. CSV 파일, 데이터베이스, 실시간 API 등 다양한 소스를 지원합니다.
-- **전략 (Strategy)**: 매수/매도 신호를 생성하는 로직입니다. 지표 계산 및 신호 생성 규칙을 정의합니다.
-- **브로커 (Broker)**: 가상의 거래소 역할을 하며, 주문을 접수하고 체결하며 포트폴리오를 관리합니다.
-- **백테스트 엔진 (Backtest Engine)**: 데이터 프로바이더, 전략, 브로커를 연결하여 백테스팅 전 과정을 조율하고 실행합니다.
+- **Data Provider**: Provides price data (OHLCV) needed for backtesting. Supports various sources including CSV files, databases, and real-time APIs.
+- **Strategy**: Logic that generates buy/sell signals. Defines indicator calculations and signal generation rules.
+- **Broker**: Acts as a virtual exchange, accepting and executing orders while managing the portfolio.
+- **Backtest Engine**: Connects the data provider, strategy, and broker to orchestrate and execute the entire backtesting process.
 
-## 2. 백테스팅 과정
+## 2. Backtesting Process
 
-### 단계 1: 필요한 모듈 임포트
+### Step 1: Import Required Modules
 
-백테스팅에 필요한 주요 클래스들을 `quantbt` 라이브러리에서 직접 임포트합니다.
+Import the main classes needed for backtesting directly from the `quantbt` library.
 
 ```python
 from datetime import datetime
@@ -30,9 +30,9 @@ from quantbt import (
 )
 ```
 
-### 단계 2: 백테스팅 설정 정의
+### Step 2: Define Backtesting Configuration
 
-`BacktestConfig`를 사용하여 백테스팅의 기본 조건을 설정합니다. 여기에는 분석할 종목, 기간, 타임프레임, 초기 자본금, 수수료 및 슬리피지 비율 등이 포함됩니다.
+Use `BacktestConfig` to set the basic conditions for backtesting. This includes symbols to analyze, time period, timeframe, initial capital, commission and slippage rates, etc.
 
 ```python
 config = BacktestConfig(
@@ -42,36 +42,36 @@ config = BacktestConfig(
     timeframe="1d",
     initial_cash=10000,
     commission_rate=0.001,
-    slippage_rate=0.0, # 슬리피지 비율
+    slippage_rate=0.0, # Slippage rate
     save_portfolio_history=True,
 )
 ```
 
-### 단계 3: 구성 요소 초기화
+### Step 3: Initialize Components
 
-백테스팅에 필요한 각 구성 요소(데이터 프로바이더, 전략, 브로커)를 초기화합니다.
+Initialize each component (data provider, strategy, broker) needed for backtesting.
 
 ```python
-# 데이터 프로바이더 설정 (업비트 데이터 사용)
+# Set up data provider (using Upbit data)
 data_provider = UpbitDataProvider()
 
-# 전략 선택 (단순 이동평균 교차 전략)
-# 10일 이동평균이 30일 이동평균을 상향 돌파하면 매수, 하향 돌파하면 매도합니다.
+# Select strategy (Simple moving average crossover strategy)
+# Buy when 10-day MA crosses above 30-day MA, sell when it crosses below
 strategy = SimpleSMAStrategy(buy_sma=10, sell_sma=30)
 
-# 브로커 설정
+# Set up broker
 broker = SimpleBroker(
     initial_cash=config.initial_cash,
     commission_rate=config.commission_rate,
 )
 ```
 
-### 단계 4: 백테스트 엔진 실행
+### Step 4: Run Backtest Engine
 
-`BacktestEngine`을 생성하고, 위에서 만든 구성 요소들을 설정한 뒤, `run` 메소드를 호출하여 백테스팅을 실행합니다.
+Create a `BacktestEngine`, configure it with the components created above, and call the `run` method to execute the backtesting.
 
 ```python
-# 백테스팅 엔진 설정 및 실행
+# Set up and run backtesting engine
 engine = BacktestEngine()
 engine.set_strategy(strategy)
 engine.set_data_provider(data_provider)
@@ -80,23 +80,23 @@ engine.set_broker(broker)
 result = engine.run(config)
 ```
 
-## 3. 결과 분석
+## 3. Result Analysis
 
-백테스팅이 완료되면 `result` 객체를 통해 다양한 성능 지표와 거래 내역을 확인할 수 있습니다.
+Once backtesting is complete, you can check various performance metrics and trade history through the `result` object.
 
 ```python
-# 요약 통계 출력
+# Print summary statistics
 result.print_summary()
 
-# 포트폴리오 성과 시각화 (Jupyter Notebook 환경에서 실행 권장)
+# Visualize portfolio performance (recommended in Jupyter Notebook environment)
 result.plot_portfolio_performance()
 ```
 
-### 주요 성능 지표
+### Key Performance Metrics
 
-- **Total Return**: 총 수익률
-- **Sharpe Ratio**: 샤프 지수 (위험 대비 수익률)
-- **Max Drawdown**: 최대 낙폭
-- **Win Rate**: 거래 승률
+- **Total Return**: Total return rate
+- **Sharpe Ratio**: Risk-adjusted return measure
+- **Max Drawdown**: Maximum decline from peak
+- **Win Rate**: Trading win rate
 
-이 가이드를 통해 QuantBT의 기본적인 사용 흐름을 파악하셨기를 바랍니다. 다음 튜토리얼에서는 더 복잡한 멀티 심볼 전략을 다루겠습니다.
+We hope this guide has helped you understand the basic usage flow of QuantBT. In the next tutorial, we'll cover more complex multi-symbol strategies.

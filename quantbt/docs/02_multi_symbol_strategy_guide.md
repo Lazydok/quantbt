@@ -1,22 +1,22 @@
-# 튜토리얼 2: 멀티 심볼 전략 백테스팅
+# Tutorial 2: Multi-Symbol Strategy Backtesting
 
-이 튜토리얼에서는 여러 종목(심볼)으로 구성된 포트폴리오를 동시에 백테스팅하는 방법을 알아봅니다. QuantBT는 여러 자산을 아우르는 전략을 손쉽게 테스트할 수 있는 강력한 기능을 제공합니다.
+This tutorial shows how to backtest portfolios composed of multiple symbols simultaneously. QuantBT provides powerful capabilities to easily test strategies that span multiple assets.
 
-> 전체 코드는 아래 Jupyter Notebook 링크에서 확인하고 직접 실행해볼 수 있습니다.
+> You can check the complete code and run it directly from the Jupyter Notebook link below.
 >
-> 👉 **[예제 노트북 바로가기: 02_multi_symbol_strategy.ipynb](../examples/02_multi_symbol_strategy.ipynb)**
+> 👉 **[Example Notebook Link: 02_multi_symbol_strategy.ipynb](../examples/02_multi_symbol_strategy.ipynb)**
 
-## 1. 멀티 심볼 전략의 개념
+## 1. Multi-Symbol Strategy Concept
 
-멀티 심볼 전략은 여러 종목의 가격 데이터를 동시에 분석하여 각 종목에 대한 매매 신호를 독립적으로 또는 연관지어 생성합니다. 이를 통해 자산 분산 효과를 노리거나, 여러 시장의 기회를 포착하는 등의 전략을 구사할 수 있습니다.
+Multi-symbol strategies analyze price data from multiple symbols simultaneously to generate trading signals for each symbol either independently or in correlation. This allows strategies to benefit from asset diversification or capture opportunities across multiple markets.
 
-## 2. 백테스팅 과정
+## 2. Backtesting Process
 
-멀티 심볼 백테스팅은 단일 심볼 백테스팅과 매우 유사한 구조를 가집니다. 가장 큰 차이점은 `BacktestConfig`에 여러 종목의 심볼을 리스트로 전달하는 것입니다.
+Multi-symbol backtesting has a very similar structure to single-symbol backtesting. The main difference is passing a list of multiple symbol names to the `symbols` attribute in `BacktestConfig`.
 
-### 단계 1: 필요한 모듈 임포트
+### Step 1: Import Required Modules
 
-백테스팅에 필요한 주요 클래스들을 `quantbt` 라이브러리에서 직접 임포트합니다.
+Import the main classes needed for backtesting directly from the `quantbt` library.
 
 ```python
 from datetime import datetime
@@ -30,9 +30,9 @@ from quantbt import (
 )
 ```
 
-### 단계 2: 멀티 심볼 전략 정의
+### Step 2: Define Multi-Symbol Strategy
 
-여러 종목을 처리할 수 있는 전략을 정의합니다. 기본 `TradingStrategy`를 상속받아 각 심볼 데이터에 대해 독립적으로 신호를 생성하도록 구현할 수 있습니다. 이 예제에서는 간단한 이동평균 교차 전략을 사용합니다.
+Define a strategy that can handle multiple symbols. You can inherit from the base `TradingStrategy` to independently generate signals for each symbol's data. This example uses a simple moving average crossover strategy.
 
 ```python
 class MultiSymbolSMAStrategy(TradingStrategy):
@@ -62,24 +62,24 @@ class MultiSymbolSMAStrategy(TradingStrategy):
 
         current_positions = self.get_current_positions()
         
-        # 각 종목에 대해 독립적으로 매매 신호 생성
+        # Generate trading signals independently for each symbol
         if current_price > buy_sma and symbol not in current_positions:
-            # ... 매수 주문 로직 ...
+            # ... Buy order logic ...
         elif current_price < sell_sma and symbol in current_positions:
-            # ... 매도 주문 로직 ...
+            # ... Sell order logic ...
             
         return orders
 ```
 
-### 단계 3: 백테스팅 설정 및 실행
+### Step 3: Configure and Run Backtesting
 
-`BacktestConfig`의 `symbols` 속성에 `["KRW-BTC", "KRW-ETH"]`와 같이 원하는 종목의 리스트를 전달합니다.
+Pass a list of desired symbols like `["KRW-BTC", "KRW-ETH"]` to the `symbols` attribute of `BacktestConfig`.
 
 ```python
-# 1. 데이터 프로바이더 설정
+# 1. Set up data provider
 data_provider = UpbitDataProvider()
 
-# 2. 백테스팅 설정 (BTC와 ETH 동시)
+# 2. Configure backtesting (BTC and ETH simultaneously)
 config = BacktestConfig(
     symbols=["KRW-BTC", "KRW-ETH"],
     start_date=datetime(2023, 1, 1),
@@ -90,14 +90,14 @@ config = BacktestConfig(
     slippage_rate=0.0
 )
 
-# 3. 전략 및 브로커 초기화
+# 3. Initialize strategy and broker
 strategy = MultiSymbolSMAStrategy(buy_sma=10, sell_sma=30)
 broker = SimpleBroker(
     initial_cash=config.initial_cash,
     commission_rate=config.commission_rate
 )
 
-# 4. 백테스트 엔진 실행
+# 4. Run backtest engine
 engine = BacktestEngine()
 engine.set_strategy(strategy)
 engine.set_data_provider(data_provider)
@@ -106,20 +106,20 @@ engine.set_broker(broker)
 result = engine.run(config)
 ```
 
-QuantBT 엔진은 루프를 돌며 각 시점의 데이터를 모든 종목에 대해 전략에 전달하고, 생성된 주문을 처리합니다.
+The QuantBT engine loops through each time point, passing data for all symbols to the strategy, and processes the generated orders.
 
-## 3. 결과 분석
+## 3. Result Analysis
 
-백테스팅 결과에는 포트폴리오 전체의 성과와 각 종목별 성과가 모두 포함됩니다.
+Backtesting results include both overall portfolio performance and individual symbol performance.
 
 ```python
 import polars as pl
 
-# 포트폴리오 전체의 종합 성과
+# Overall portfolio performance
 result.print_summary()
 result.plot_portfolio_performance()
 
-# 개별 종목의 성과 분석
+# Individual symbol performance analysis
 btc_trades = result.trades.filter(pl.col("symbol") == "KRW-BTC")
 eth_trades = result.trades.filter(pl.col("symbol") == "KRW-ETH")
 
@@ -130,4 +130,4 @@ print("=== ETH Trades ===")
 print(eth_trades)
 ```
 
-이처럼 QuantBT를 사용하면 복잡한 멀티 심볼 포트폴리오 전략도 간결한 코드로 테스트하고 분석할 수 있습니다. 다음 튜토리얼에서는 한 종목의 지표를 다른 종목 거래에 활용하는 '크로스 심볼' 전략에 대해 알아보겠습니다. 
+With QuantBT, you can test and analyze complex multi-symbol portfolio strategies with concise code. In the next tutorial, we'll explore 'cross-symbol' strategies that use indicators from one symbol to trade another symbol. 
