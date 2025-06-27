@@ -66,7 +66,7 @@ class QuantBTEngineAdapter:
             
             # 4. 실제 백테스트 실행
             logger.info("백테스트 실행 중...")
-            result = engine.run(self.base_config)
+            result = engine.run(self.base_config, show_progress=False)
             logger.info(f"백테스트 완료: {type(result)}")
             
             # 백테스트 결과 상세 정보 로그
