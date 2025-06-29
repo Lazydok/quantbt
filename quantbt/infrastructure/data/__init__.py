@@ -6,8 +6,10 @@ Data Infrastructure
 
 from .csv_provider import CSVDataProvider
 from .upbit_provider import UpbitDataProvider
+from .binance_provider import BinanceDataProvider
 
 __all__ = [
     "CSVDataProvider",
-    "UpbitDataProvider"
+    "UpbitDataProvider",
+    "BinanceDataProvider"
 ] 

@@ -15,6 +15,7 @@
 - **📈 직관적인 결과 분석**: 백테스팅 결과를 담은 리포트와 **다채로운 시각화 차트**를 통해 전략의 성과를 다각도로 분석하고 깊이 있는 인사이트를 얻을 수 있습니다.
 - **🔌 확장 가능한 아키텍처**: 데이터 소스, 리스크 관리, 포트폴리오 구성 등 모든 요소를 사용자가 직접 정의하고 확장할 수 있도록 설계되었습니다.
 - **💡 룩어헤드 편향 방지**: 각 시점에서는 과거와 현재 데이터만 접근할 수 있도록 설계되어 미래 데이터를 참조하는 실수를 원천적으로 방지합니다.
+- **🌐 다양한 데이터 소스**: 업비트(Upbit), 바이낸스(Binance), CSV 파일 등 다양한 데이터 소스를 지원하며, 자동 캐싱 및 데이터 관리 기능을 제공합니다.
 
 ## 🏗️ 시스템 아키텍처
 
@@ -85,6 +86,82 @@ or
 pip install git+https://github.com/lazydok/quantbt.git
 ```
 
+## 📊 데이터 프로바이더
+
+QuantBT는 다양한 데이터 소스를 지원하며, 각각 고유한 특징과 장점을 가지고 있습니다.
+
+### 🇰🇷 업비트 (Upbit) 데이터 프로바이더
+
+한국 원화 기반 암호화폐 거래소 업비트의 데이터를 제공합니다.
+
+```python
+from quantbt.infrastructure.data import UpbitDataProvider
+
+# 업비트 데이터 프로바이더 사용
+async with UpbitDataProvider() as provider:
+    data = await provider.get_data(
+        symbols=["KRW-BTC", "KRW-ETH"],
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 1, 31),
+        timeframe="1m"
+    )
+```
+
+### 🌍 바이낸스 (Binance) 데이터 프로바이더
+
+세계 최대 암호화폐 거래소 바이낸스의 USDT 페어 데이터를 제공합니다.
+
+```python
+from quantbt.infrastructure.data import BinanceDataProvider
+
+# 바이낸스 데이터 프로바이더 사용
+async with BinanceDataProvider() as provider:
+    data = await provider.get_data(
+        symbols=["BTCUSDT", "ETHUSDT"],
+        start=datetime(2024, 1, 1),
+        end=datetime(2024, 1, 31),
+        timeframe="1m"
+    )
+```
+
+### 🔄 바이낸스 대량 데이터 다운로드
+
+바이낸스의 모든 USDT 페어 데이터를 한 번에 다운로드할 수 있습니다:
+
+```bash
+# 전체 USDT 페어 1분봉 다운로드 (2024년 1월)
+python binance_downloader.py --start 2024-01-01 --end 2024-01-31
+
+# 특정 심볼만 다운로드
+python binance_downloader.py --symbols BTCUSDT ETHUSDT --start 2024-01-01 --end 2024-01-07
+
+# CSV 파일로 내보내기
+python binance_downloader.py --symbols BTCUSDT --start 2024-01-01 --end 2024-01-02 --csv
+```
+
+**바이낸스 프로바이더 주요 기능:**
+- ✅ 전체 USDT 페어 심볼 자동 조회
+- ✅ 배치 단위 대량 다운로드
+- ✅ 자동 데이터 검증 및 빈값 채우기
+- ✅ SQLite + Parquet 하이브리드 캐싱
+- ✅ CSV 내보내기 기능
+- ✅ API 속도 제한 자동 관리
+
+### 🗂️ CSV 데이터 프로바이더
+
+로컬 CSV 파일에서 데이터를 읽어올 수 있습니다.
+
+```python
+from quantbt.infrastructure.data import CSVDataProvider
+
+data_provider = CSVDataProvider(
+    file_path="my_data.csv",
+    symbol_column="symbol",
+    timestamp_column="timestamp",
+    ohlcv_columns=["open", "high", "low", "close", "volume"]
+)
+```
+
 ## ⚡ 5분 만에 시작하기: 간단한 전략 백테스팅
 
 이동평균선 두 개의 교차를 이용하는 간단한 전략을 백테스팅하는 예제입니다.
@@ -94,17 +171,17 @@ from datetime import datetime
 from quantbt import (
     BacktestEngine,
     BacktestConfig,
-    UpbitDataProvider,
+    BinanceDataProvider,  # 바이낸스 데이터 사용
     SimpleBroker,
     SimpleSMAStrategy,
 )
 
 # 1. 데이터 프로바이더 설정
-data_provider = UpbitDataProvider()
+data_provider = BinanceDataProvider()
 
 # 2. 백테스팅 설정
 config = BacktestConfig(
-    symbols=["KRW-BTC"],
+    symbols=["BTCUSDT"],  # 바이낸스 심볼 형식
     start_date=datetime(2023, 1, 1),
     end_date=datetime(2023, 12, 31),
     timeframe="1d",
@@ -169,6 +246,7 @@ QuantBT의 강력하고 다양한 기능들을 예제와 함께 배워보세요.
 - [x] 멀티 타임프레임 분석 시스템 (리샘플링)
 - [x] 파라미터 최적화 병렬 처리 (Ray 연동)
 - [x] 베이지안 파라미터 최적화
+- [x] 바이낸스 데이터 프로바이더 및 대량 다운로드 도구
 - [ ] 실시간 데이터 피드 연동 (Live Trading)
 - [ ] 머신러닝/딥러닝 전략 프레임워크 통합
 - [ ] 클라우드 기반 대규모 백테스팅 지원

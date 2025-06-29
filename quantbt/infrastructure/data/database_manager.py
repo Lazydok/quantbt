@@ -174,14 +174,28 @@ class DatabaseManager:
         # DataFrame을 딕셔너리 리스트로 변환
         records = []
         for row in data.iter_rows(named=True):
-            # KST 시간을 UTC로 변환
-            timestamp_kst = row['timestamp']
-            if timestamp_kst.tzinfo is None:
-                # naive datetime은 KST로 가정
-                from zoneinfo import ZoneInfo
-                timestamp_kst = timestamp_kst.replace(tzinfo=ZoneInfo("Asia/Seoul"))
+            timestamp = row['timestamp']
             
-            timestamp_utc = timestamp_kst.astimezone(timezone.utc)
+            # 프로바이더별 타임존 처리
+            if provider == "binance":
+                # 바이낸스는 UTC 기준
+                if timestamp.tzinfo is None:
+                    timestamp_utc = timestamp.replace(tzinfo=timezone.utc)
+                else:
+                    timestamp_utc = timestamp.astimezone(timezone.utc)
+                
+                # UTC를 KST로 변환
+                from zoneinfo import ZoneInfo
+                timestamp_kst = timestamp_utc.astimezone(ZoneInfo("Asia/Seoul"))
+            else:
+                # 업비트 등은 KST 기준 (기존 로직)
+                if timestamp.tzinfo is None:
+                    from zoneinfo import ZoneInfo
+                    timestamp_kst = timestamp.replace(tzinfo=ZoneInfo("Asia/Seoul"))
+                else:
+                    timestamp_kst = timestamp
+                
+                timestamp_utc = timestamp_kst.astimezone(timezone.utc)
             
             records.append((
                 provider, symbol, timeframe,
@@ -210,14 +224,27 @@ class DatabaseManager:
                        start_utc: datetime, end_utc: datetime) -> pl.DataFrame:
         """SQLite에서 시장 데이터 조회"""
         with sqlite3.connect(self.db_path) as conn:
-            query = '''
-                SELECT timestamp_kst, open_price, high_price, 
-                       low_price, close_price, volume
-                FROM market_data 
-                WHERE provider = ? AND symbol = ? AND timeframe = ?
-                  AND timestamp_utc BETWEEN ? AND ?
-                ORDER BY timestamp_utc
-            '''
+            # 프로바이더별로 적절한 타임스탬프 선택
+            if provider == "binance":
+                # 바이낸스는 UTC 타임스탬프 반환
+                query = '''
+                    SELECT timestamp_utc, open_price, high_price, 
+                           low_price, close_price, volume
+                    FROM market_data 
+                    WHERE provider = ? AND symbol = ? AND timeframe = ?
+                      AND timestamp_utc BETWEEN ? AND ?
+                    ORDER BY timestamp_utc
+                '''
+            else:
+                # 업비트 등은 KST 타임스탬프 반환 (기존 로직)
+                query = '''
+                    SELECT timestamp_kst, open_price, high_price, 
+                           low_price, close_price, volume
+                    FROM market_data 
+                    WHERE provider = ? AND symbol = ? AND timeframe = ?
+                      AND timestamp_utc BETWEEN ? AND ?
+                    ORDER BY timestamp_utc
+                '''
             
             cursor = conn.execute(query, (
                 provider, symbol, timeframe,
@@ -241,13 +268,20 @@ class DatabaseManager:
         # DataFrame 생성
         data = []
         for row in rows:
-            timestamp_kst = datetime.fromisoformat(row[0])
-            # KST 타임존 정보 추가
-            from zoneinfo import ZoneInfo
-            timestamp_kst = timestamp_kst.replace(tzinfo=ZoneInfo("Asia/Seoul"))
+            timestamp_str = row[0]
+            timestamp = datetime.fromisoformat(timestamp_str)
+            
+            # 프로바이더별 타임존 처리
+            if provider == "binance":
+                # 바이낸스는 UTC 타임존 추가
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
+            else:
+                # 업비트 등은 KST 타임존 추가 (기존 로직)
+                from zoneinfo import ZoneInfo
+                timestamp = timestamp.replace(tzinfo=ZoneInfo("Asia/Seoul"))
             
             data.append({
-                "timestamp": timestamp_kst,
+                "timestamp": timestamp,
                 "symbol": symbol,
                 "open": row[1],
                 "high": row[2],
