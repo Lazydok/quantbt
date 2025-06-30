@@ -39,6 +39,7 @@ class BayesianParameterOptimizer:
         config: BacktestConfig,
         num_actors: int = 4,
         n_initial_points: int = 10,
+        enable_dashboard: bool = False,
     ):
         """
         BayesianParameterOptimizer를 초기화합니다.
@@ -49,12 +50,14 @@ class BayesianParameterOptimizer:
             config (BacktestConfig): 백테스트 설정.
             num_actors (int): 병렬 처리에 사용할 Ray 액터의 수.
             n_initial_points (int): 베이지안 최적화의 초기 랜덤 탐색 횟수.
+            enable_dashboard (bool): Ray 웹 대시보드 활성화 여부 (기본값: False).
         """
         self.strategy_class = strategy_class
         self.param_space = param_space
         self.config = config
         self.num_actors = num_actors
         self.n_initial_points = n_initial_points
+        self.enable_dashboard = enable_dashboard
         self.actors: List[BacktestActor] = []
         self.early_stopper: EarlyStopping = None
         self.stop_display_event = threading.Event()
@@ -118,7 +121,8 @@ class BayesianParameterOptimizer:
                     num_cpus=self.num_actors,
                     ignore_reinit_error=True,
                     logging_level=logging.INFO,
-                    log_to_driver=True
+                    log_to_driver=True,
+                    include_dashboard=self.enable_dashboard
                 )
             
             data_manager = RayDataManager.remote()
@@ -210,7 +214,7 @@ class BayesianParameterOptimizer:
         """
         logger.info(f"초기화 시작: {self.num_actors}개의 백테스트 액터를 생성합니다.")
         if not ray.is_initialized():
-            ray.init(num_cpus=self.num_actors)
+            ray.init(num_cpus=self.num_actors, include_dashboard=self.enable_dashboard)
             
         self.actors = [BacktestActor.remote(f"actor_{i}", shared_data_ref) for i in range(self.num_actors)]
         
